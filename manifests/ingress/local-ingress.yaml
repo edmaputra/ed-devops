@@ -1,0 +1,45 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: local-ingress
+  namespace: default
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - vault.localhost
+        - consul.localhost
+        - jenkins.localhost
+        - ilmiya.localhost
+      secretName: local-wildcard-tls
+  rules:
+    - host: vault.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vault-ui
+                port:
+                  number: 8200
+    - host: consul.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: consul-ui
+                port:
+                  number: 80
+    - host: jenkins.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jenkins
+                port:
+                  number: 8080

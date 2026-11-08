@@ -1,0 +1,207 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ilmiya-postgres
+  namespace: default
+  labels:
+    app: ilmiya-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ilmiya-postgres
+  template:
+    metadata:
+      labels:
+        app: ilmiya-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: k3d-dev-registry:5000/postgres:17-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_DB
+              value: "ilmiya_db"
+            - name: POSTGRES_USER
+              value: "ilmiya_user"
+            - name: POSTGRES_PASSWORD
+              value: "ilmiya_password"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ilmiya-postgres
+  namespace: default
+spec:
+  selector:
+    app: ilmiya-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ilmiya-backend
+  namespace: default
+  labels:
+    app: ilmiya-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ilmiya-backend
+  template:
+    metadata:
+      labels:
+        app: ilmiya-backend
+    spec:
+      containers:
+        - name: backend
+          image: k3d-dev-registry:5000/ilmiya-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "local"
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://ilmiya-postgres:5432/ilmiya_db"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: "ilmiya_user"
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: "ilmiya_password"
+            - name: SERVER_PORT
+              value: "8080"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1024Mi
+          readinessProbe:
+            httpGet:
+              path: /api-docs
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api-docs
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ilmiya-backend
+  namespace: default
+spec:
+  selector:
+    app: ilmiya-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ilmiya-frontend
+  namespace: default
+  labels:
+    app: ilmiya-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ilmiya-frontend
+  template:
+    metadata:
+      labels:
+        app: ilmiya-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: k3d-dev-registry:5000/ilmiya-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ilmiya-frontend
+  namespace: default
+spec:
+  selector:
+    app: ilmiya-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ilmiya-ingress
+  namespace: default
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - ilmiya.localhost
+      secretName: local-wildcard-tls
+  rules:
+    - host: ilmiya.localhost
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: ilmiya-backend
+                port:
+                  number: 8080
+          - path: /swagger-ui
+            pathType: Prefix
+            backend:
+              service:
+                name: ilmiya-backend
+                port:
+                  number: 8080
+          - path: /api-docs
+            pathType: Prefix
+            backend:
+              service:
+                name: ilmiya-backend
+                port:
+                  number: 8080
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ilmiya-frontend
+                port:
+                  number: 80

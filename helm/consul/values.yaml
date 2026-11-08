@@ -1,0 +1,15 @@
+global:
+  name: consul
+  installK8sNetworkingCRDs: false
+server:
+  replicas: 1
+  bootstrapExpect: 1
+ui:
+  enabled: true
+  service:
+    enabled: true
+    type: ClusterIP
+client:
+  enabled: false
+connectInject:
+  enabled: false

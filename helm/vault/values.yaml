@@ -1,0 +1,11 @@
+global:
+  enabled: true
+server:
+  dev:
+    enabled: true
+    devRootToken: "root"
+ui:
+  enabled: true
+  serviceType: "ClusterIP"
+injector:
+  enabled: true
