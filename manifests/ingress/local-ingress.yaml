@@ -10,6 +10,7 @@ spec:
         - vault.localhost
         - consul.localhost
         - jenkins.localhost
+        - argocd.localhost
       secretName: local-wildcard-tls
   rules:
     - host: vault.localhost
@@ -42,3 +43,13 @@ spec:
                 name: jenkins
                 port:
                   number: 8080
+    - host: argocd.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80
