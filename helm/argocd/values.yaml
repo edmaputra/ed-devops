@@ -1,0 +1,60 @@
+global:
+  domain: argocd.localhost
+
+configs:
+  params:
+    server.insecure: true
+  secret:
+    # Bcrypt hash for "admin123"
+    argocdServerAdminPassword: "$2a$10$oVbzkaBWQJr7QoifYHbm3uckkM9UiZC511Ue8mDOeYhpO0x8/h/T2"
+
+server:
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+repoServer:
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+controller:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+applicationSet:
+  resources:
+    requests:
+      cpu: "20m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+redis:
+  resources:
+    requests:
+      cpu: "20m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+dex:
+  enabled: false
+
+notifications:
+  enabled: false

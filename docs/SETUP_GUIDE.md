@@ -1,6 +1,6 @@
 # Complete Step-by-Step Setup Guide: Local Kubernetes DevOps Laboratory
 
-This guide explains in detail how the entire local DevOps platform is architected and built from scratch using **k3d**, **Rootless Podman**, **Jenkins**, **HashiCorp Vault**, **HashiCorp Consul**, **mkcert Local TLS**, and **Traefik Ingress**.
+This guide explains in detail how the entire local DevOps platform is architected and built from scratch using **k3d**, **Rootless Podman**, **Jenkins**, **ArgoCD**, **HashiCorp Vault**, **HashiCorp Consul**, **mkcert Local TLS**, and **Traefik Ingress**.
 
 ---
 
@@ -16,6 +16,7 @@ graph TD
             
             subgraph K3sCluster [k3d Kubernetes Cluster: dev-cluster]
                 Traefik -->|https://jenkins.localhost| Jenkins[Jenkins Controller<br/>Port 8080]
+                Traefik -->|https://argocd.localhost| ArgoCD[ArgoCD Server<br/>Port 80]
                 Traefik -->|https://vault.localhost| Vault[HashiCorp Vault<br/>Port 8200]
                 Traefik -->|https://consul.localhost| Consul[HashiCorp Consul<br/>Port 80]
                 Traefik -->|https://app.localhost| Apps[Deployed Applications]
@@ -23,6 +24,7 @@ graph TD
                 Jenkins -.->|Dynamic agent pods via Kaniko| K8sAgents[Kubernetes Build Agents]
                 K8sAgents -.->|Push Images| Reg
                 
+                ArgoCD -.->|Sync & Reconcile Manifests| Apps
                 VaultInjector[Vault Agent Injector] -.->|Injects Secrets| Apps
             end
         end
@@ -153,7 +155,8 @@ mkcert -cert-file certs/local-cert.pem -key-file certs/local-key.pem \
   "*.localhost" \
   vault.localhost \
   consul.localhost \
-  jenkins.localhost
+  jenkins.localhost \
+  argocd.localhost
 ```
 
 ---
@@ -314,7 +317,67 @@ helm upgrade --install jenkins jenkins/jenkins -f helm/jenkins/values.yaml
 
 ---
 
-### Step 6.4: Ingress for Platform Services
+### Step 6.4: ArgoCD GitOps Continuous Delivery
+Add repository:
+```bash
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
+```
+
+Configuration (`helm/argocd/values.yaml`):
+```yaml
+global:
+  domain: argocd.localhost
+
+configs:
+  params:
+    server.insecure: true
+  secret:
+    # Bcrypt hash for "admin123"
+    argocdServerAdminPassword: "$2a$10$oVbzkaBWQJr7QoifYHbm3uckkM9UiZC511Ue8mDOeYhpO0x8/h/T2"
+
+server:
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+repoServer:
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+controller:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+dex:
+  enabled: false
+
+notifications:
+  enabled: false
+```
+
+Deploy:
+```bash
+helm upgrade --install argocd argo/argo-cd -f helm/argocd/values.yaml
+```
+
+---
+
+### Step 6.5: Ingress for Platform Services
 Defined in `manifests/ingress/local-ingress.yaml`:
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -329,6 +392,7 @@ spec:
         - vault.localhost
         - consul.localhost
         - jenkins.localhost
+        - argocd.localhost
       secretName: local-wildcard-tls
   rules:
     - host: vault.localhost
@@ -361,6 +425,16 @@ spec:
                 name: jenkins
                 port:
                   number: 8080
+    - host: argocd.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80
 ```
 Apply:
 ```bash
@@ -369,7 +443,7 @@ kubectl apply -f manifests/ingress/local-ingress.yaml
 
 ---
 
-### Step 6.5: Grant Deployer Permissions to Jenkins Agents
+### Step 6.6: Grant Deployer Permissions to Jenkins Agents
 To allow Jenkins agent pods to create and update application workloads in the `default` namespace:
 
 ```bash
@@ -404,7 +478,7 @@ When deploying microservices to this lab:
 
 ### 2. `curl: (60) SSL: no alternative certificate subject name matches target hostname`
 - **Cause**: OpenSSL adheres strictly to RFC 6125 §6.4.3, which rejects wildcards matching single-label TLDs (`*.localhost`).
-- **Fix**: Re-issue certificates with explicit Subject Alternative Names (`vault.localhost`, `consul.localhost`, `jenkins.localhost`).
+- **Fix**: Re-issue certificates with explicit Subject Alternative Names (`vault.localhost`, `consul.localhost`, `jenkins.localhost`, `argocd.localhost`).
 
 ### 3. Webhook Failures on Pod Creation
 - **Symptom**: `failed calling webhook consul-connect-injector.consul.hashicorp.com: no endpoints available`
@@ -421,6 +495,7 @@ When deploying microservices to this lab:
 | Component | Protocol & Port | URL | Credentials |
 | :--- | :--- | :--- | :--- |
 | **Jenkins CI/CD** | HTTPS (443) | `https://jenkins.localhost` | `admin` / `admin123` |
+| **ArgoCD GitOps** | HTTPS (443) | `https://argocd.localhost` | `admin` / `admin123` |
 | **HashiCorp Vault UI** | HTTPS (443) | `https://vault.localhost/ui/` | Token: `root` |
 | **HashiCorp Consul UI** | HTTPS (443) | `https://consul.localhost/ui/` | No auth required |
 | **Local Container Registry** | HTTP (5000) | `http://localhost:5000/v2/_catalog` | Docker Registry API |
