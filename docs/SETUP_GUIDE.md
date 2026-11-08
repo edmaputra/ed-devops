@@ -17,11 +17,13 @@ graph TD
             subgraph K3sCluster [k3d Kubernetes Cluster: dev-cluster]
                 Traefik -->|https://jenkins.localhost| Jenkins[Jenkins Controller<br/>Port 8080]
                 Traefik -->|https://argocd.localhost| ArgoCD[ArgoCD Server<br/>Port 80]
+                Traefik -->|https://sonar.localhost| SonarQube[SonarQube Server<br/>Port 9000]
                 Traefik -->|https://vault.localhost| Vault[HashiCorp Vault<br/>Port 8200]
                 Traefik -->|https://consul.localhost| Consul[HashiCorp Consul<br/>Port 80]
                 Traefik -->|https://app.localhost| Apps[Deployed Applications]
                 
                 Jenkins -.->|Dynamic agent pods via Kaniko| K8sAgents[Kubernetes Build Agents]
+                K8sAgents -.->|Code Quality Scan| SonarQube
                 K8sAgents -.->|Push Images| Reg
                 
                 ArgoCD -.->|Sync & Reconcile Manifests| Apps
@@ -156,7 +158,9 @@ mkcert -cert-file certs/local-cert.pem -key-file certs/local-key.pem \
   vault.localhost \
   consul.localhost \
   jenkins.localhost \
-  argocd.localhost
+  argocd.localhost \
+  sonar.localhost \
+  sonarqube.localhost
 ```
 
 ---
@@ -377,7 +381,48 @@ helm upgrade --install argocd argo/argo-cd -f helm/argocd/values.yaml
 
 ---
 
-### Step 6.5: Ingress for Platform Services
+### Step 6.5: SonarQube Code Quality & Security Platform
+Add repository:
+```bash
+helm repo add sonarqube https://SonarSource.github.io/helm-chart-sonarqube
+helm repo update
+```
+
+Configuration (`helm/sonarqube/values.yaml`):
+```yaml
+fullnameOverride: "sonarqube"
+edition: ""
+community:
+  enabled: true
+monitoringPasscode: "sonarPasscode123"
+initSysctl:
+  enabled: false
+initFs:
+  enabled: false
+resources:
+  requests:
+    cpu: "200m"
+    memory: "1.5Gi"
+  limits:
+    cpu: "1000m"
+    memory: "2.5Gi"
+jvmOpts: "-Xms512m -Xmx1024m"
+jvmCeOpts: "-Xms256m -Xmx512m"
+service:
+  type: ClusterIP
+  externalPort: 9000
+persistence:
+  enabled: false
+```
+
+Deploy:
+```bash
+helm upgrade --install sonarqube sonarqube/sonarqube -f helm/sonarqube/values.yaml
+```
+
+---
+
+### Step 6.6: Ingress for Platform Services
 Defined in `manifests/ingress/local-ingress.yaml`:
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -393,6 +438,8 @@ spec:
         - consul.localhost
         - jenkins.localhost
         - argocd.localhost
+        - sonar.localhost
+        - sonarqube.localhost
       secretName: local-wildcard-tls
   rules:
     - host: vault.localhost
@@ -435,6 +482,26 @@ spec:
                 name: argocd-server
                 port:
                   number: 80
+    - host: sonar.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sonarqube
+                port:
+                  number: 9000
+    - host: sonarqube.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sonarqube
+                port:
+                  number: 9000
 ```
 Apply:
 ```bash
@@ -443,11 +510,25 @@ kubectl apply -f manifests/ingress/local-ingress.yaml
 
 ---
 
-### Step 6.6: Grant Deployer Permissions to Jenkins Agents
+### Step 6.7: Grant Deployer Permissions to Jenkins Agents
 To allow Jenkins agent pods to create and update application workloads in the `default` namespace:
 
 ```bash
 kubectl apply -f manifests/jenkins/jenkins-deployer-rbac.yaml
+```
+
+---
+
+### Step 6.8: Seed Centralized Local Deployment Pipelines
+To maintain total decoupling between application repositories and platform infrastructure, Jenkins uses centralized inline pipelines rather than reading `Jenkinsfile` from app repositories.
+
+The pipelines are stored under `pipelines/`:
+- `pipelines/local-deploy-backend.groovy` (Java / Kotlin Spring Boot Backend)
+- `pipelines/local-deploy-frontend.groovy` (Flutter Web Frontend)
+
+Seed or update these jobs in Jenkins at any time:
+```bash
+make seed-jobs
 ```
 
 ---
@@ -462,6 +543,30 @@ When deploying microservices to this lab:
    If deploying a Frontend SPA and Backend REST API together, route them in an Ingress under a single host (e.g., `<app>.localhost` with `/` to the frontend and `/api` to the backend). This avoids CORS issues and port conflicts.
 3. **Secret Injection**:
    Annotate application pods with `vault.hashicorp.com/agent-inject: "true"` to have Vault inject secrets into `/vault/secrets/`.
+4. **Integration Testing with Testcontainers in Jenkins Agent Pods**:
+   Java Spring Boot microservices utilizing Testcontainers (e.g. `testcontainers-postgresql`) require access to a container engine:
+   - **On GitHub Actions**: Docker is natively available out of the box.
+   - **On Kubernetes Jenkins Agents**: Add a `docker:dind` sidecar to the pod template with `securityContext.privileged: true` or mount the host Podman/Docker socket:
+     ```yaml
+     spec:
+       containers:
+         - name: gradle
+           image: gradle:jdk25
+           env:
+             - name: DOCKER_HOST
+               value: tcp://localhost:2375
+             - name: DOCKER_TLS_VERIFY
+               value: "0"
+             - name: TESTCONTAINERS_HOST_OVERRIDE
+               value: localhost
+         - name: dind
+           image: docker:dind
+           securityContext:
+             privileged: true
+           env:
+             - name: DOCKER_TLS_CERTDIR
+               value: ""
+     ```
 
 ---
 
@@ -496,6 +601,7 @@ When deploying microservices to this lab:
 | :--- | :--- | :--- | :--- |
 | **Jenkins CI/CD** | HTTPS (443) | `https://jenkins.localhost` | `admin` / `admin123` |
 | **ArgoCD GitOps** | HTTPS (443) | `https://argocd.localhost` | `admin` / `admin123` |
+| **SonarQube** | HTTPS (443) | `https://sonar.localhost` | `admin` / `admin` |
 | **HashiCorp Vault UI** | HTTPS (443) | `https://vault.localhost/ui/` | Token: `root` |
 | **HashiCorp Consul UI** | HTTPS (443) | `https://consul.localhost/ui/` | No auth required |
 | **Local Container Registry** | HTTP (5000) | `http://localhost:5000/v2/_catalog` | Docker Registry API |

@@ -16,6 +16,10 @@ ports:
 registries:
   use:
     - k3d-dev-registry:5000
+volumes:
+  - volume: /run/user/1000/podman/podman.sock:/run/podman/podman.sock
+    nodeFilters:
+      - server:0
 options:
   k3s:
     extraArgs:

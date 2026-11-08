@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ilmiya-backend
+  namespace: default
+  labels:
+    app.kubernetes.io/name: ilmiya-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ilmiya-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ilmiya-backend
+    spec:
+      containers:
+        - name: ilmiya-backend
+          image: k3d-dev-registry:5000/ilmiya-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "local"
+            - name: SERVER_PORT
+              value: "8080"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1024Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ilmiya-backend
+  namespace: default
+  labels:
+    app.kubernetes.io/name: ilmiya-backend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  selector:
+    app.kubernetes.io/name: ilmiya-backend
