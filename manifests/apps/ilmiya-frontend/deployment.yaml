@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ilmiya-frontend
+  namespace: default
+  labels:
+    app.kubernetes.io/name: ilmiya-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ilmiya-frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ilmiya-frontend
+    spec:
+      containers:
+        - name: ilmiya-frontend
+          image: k3d-dev-registry:5000/ilmiya-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ilmiya-frontend
+  namespace: default
+  labels:
+    app.kubernetes.io/name: ilmiya-frontend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http
+  selector:
+    app.kubernetes.io/name: ilmiya-frontend

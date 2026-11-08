@@ -1,0 +1,37 @@
+fullnameOverride: "sonarqube"
+
+edition: ""
+
+community:
+  enabled: true
+
+# Monitoring passcode required by chart health probes
+monitoringPasscode: "sonarPasscode123"
+
+# Rootless environment compatibility: sysctl is configured on host
+initSysctl:
+  enabled: false
+
+initFs:
+  enabled: false
+
+# Resource tuning for local development lab
+resources:
+  requests:
+    cpu: "200m"
+    memory: "1.5Gi"
+  limits:
+    cpu: "1000m"
+    memory: "2.5Gi"
+
+# JVM heap tuning (Web and Compute Engine)
+jvmOpts: "-Xms512m -Xmx1024m"
+jvmCeOpts: "-Xms256m -Xmx512m"
+
+service:
+  type: ClusterIP
+  externalPort: 9000
+
+# Embedded evaluation database for lightweight local lab
+persistence:
+  enabled: false
