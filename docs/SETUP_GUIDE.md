@@ -18,25 +18,21 @@ graph TD
                 Traefik -->|https://jenkins.localhost| Jenkins[Jenkins Controller<br/>Port 8080]
                 Traefik -->|https://vault.localhost| Vault[HashiCorp Vault<br/>Port 8200]
                 Traefik -->|https://consul.localhost| Consul[HashiCorp Consul<br/>Port 80]
-                
-                Traefik -->|https://ilmiya.localhost/| Frontend[Flutter Web / Nginx<br/>Port 80]
-                Traefik -->|https://ilmiya.localhost/api| Backend[Kotlin Spring Boot<br/>Port 8080]
-                
-                Backend -->|jdbc:postgresql| Postgres[PostgreSQL 17<br/>Port 5432]
+                Traefik -->|https://app.localhost| Apps[Deployed Applications]
                 
                 Jenkins -.->|Dynamic agent pods via Kaniko| K8sAgents[Kubernetes Build Agents]
                 K8sAgents -.->|Push Images| Reg
                 
-                VaultInjector[Vault Agent Injector] -.->|Injects Secrets| Backend
+                VaultInjector[Vault Agent Injector] -.->|Injects Secrets| Apps
             end
         end
     end
 ```
 
 ### Key Architectural Decisions
-1. **Clean URLs on Standard Ports**: All traffic runs on standard port `80` (HTTP) and `443` (HTTPS). No explicit ports like `:8080` or `:3000` in the browser.
+1. **Clean URLs on Standard Ports**: All traffic runs on standard port `80` (HTTP) and `443` (HTTPS). No explicit ports like `:8080` in the browser.
 2. **Zero-Warning Local TLS (`mkcert`)**: Root CA installed in system and browser NSS trust stores, generating valid certificates with explicit SANs for `*.localhost`.
-3. **Single Origin Microservices (Zero CORS)**: Flutter Web (`/`) and Spring Boot API (`/api`) share `https://ilmiya.localhost`, completely eliminating Cross-Origin Resource Sharing (CORS) blocks and preflight delays.
+3. **Decoupled Platform Architecture**: The platform provides foundational infrastructure (Kubernetes, Ingress, CI/CD, Secrets, Service Mesh) while individual application repositories manage their own builds and deployments.
 4. **Rootless Podman Compatibility**: 100% daemonless, rootless container execution with cgroup v2 delegation and unprivileged port access.
 5. **In-Cluster Dynamic Builds**: Jenkins uses ephemeral Kubernetes Pods running **Kaniko** to compile and push images without needing Docker-in-Docker or root permissions.
 
@@ -157,9 +153,7 @@ mkcert -cert-file certs/local-cert.pem -key-file certs/local-key.pem \
   "*.localhost" \
   vault.localhost \
   consul.localhost \
-  jenkins.localhost \
-  ilmiya.localhost \
-  "*.ilmiya.localhost"
+  jenkins.localhost
 ```
 
 ---
@@ -375,183 +369,29 @@ kubectl apply -f manifests/ingress/local-ingress.yaml
 
 ---
 
-## 7. Deploying Microservices (Flutter Web + Spring Boot Backend)
+### Step 6.5: Grant Deployer Permissions to Jenkins Agents
+To allow Jenkins agent pods to create and update application workloads in the `default` namespace:
 
-### Step 7.1: Frontend Dockerfile & Nginx Config
-In `/home/edmaputra/Projects/ilmiya-frontend/`:
-
-**`nginx.conf`** (SPA routing fallback):
-```nginx
-server {
-    listen 80;
-    server_name localhost;
-
-    root /usr/share/nginx/html;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|wasm|ttf|woff|woff2)$ {
-        expires 1y;
-        add_header Cache-Control "public, no-transform";
-    }
-
-    location = /index.html {
-        add_header Cache-Control "no-store, no-cache, must-revalidate";
-    }
-}
-```
-
-**`Dockerfile`**:
-```dockerfile
-# Stage 1: Build Flutter Web
-FROM ghcr.io/cirruslabs/flutter:stable AS builder
-WORKDIR /app
-RUN flutter config --enable-web --no-analytics
-COPY pubspec.yaml pubspec.lock ./
-RUN flutter pub get
-COPY . .
-ARG ILMIYA_API_BASE_URL=https://ilmiya.localhost
-RUN flutter build web --release --dart-define=ILMIYA_API_BASE_URL=${ILMIYA_API_BASE_URL}
-
-# Stage 2: Serve with Nginx
-FROM nginx:alpine AS runner
-COPY --from=builder /app/build/web /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
-```
-
----
-
-### Step 7.2: Unified Application Stack (`manifests/apps/ilmiya-stack.yaml`)
-Deploys PostgreSQL 17, Spring Boot Backend, Flutter Web, and path-based Ingress routing under `ilmiya.localhost`:
-
-```bash
-kubectl apply -f manifests/apps/ilmiya-stack.yaml
-```
-
----
-
-### Step 7.3: Grant Deployer Permissions to Jenkins
-Defined in `manifests/jenkins/jenkins-deployer-rbac.yaml`:
 ```bash
 kubectl apply -f manifests/jenkins/jenkins-deployer-rbac.yaml
 ```
 
 ---
 
-## 8. Jenkins CI/CD Pipelines
+## 7. Connecting External Applications & Microservices
 
-Both services are equipped with declarative `Jenkinsfile` configurations using dynamic Kubernetes Pod Agents:
+When deploying microservices to this lab:
 
-### Backend Pipeline (`ilmiya/Jenkinsfile`)
-```groovy
-pipeline {
-    agent {
-        kubernetes {
-            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-    - name: kaniko
-      image: gcr.io/kaniko-project/executor:debug
-      command: ['/busybox/cat']
-      tty: true
-    - name: kubectl
-      image: bitnami/kubectl:latest
-      command: ['cat']
-      tty: true
-"""
-        }
-    }
-    stages {
-        stage('Build & Push Backend') {
-            steps {
-                container('kaniko') {
-                    sh """
-                    /kaniko/executor \
-                      --context=dir://. \
-                      --dockerfile=Dockerfile \
-                      --destination=k3d-dev-registry:5000/ilmiya-backend:${BUILD_NUMBER} \
-                      --destination=k3d-dev-registry:5000/ilmiya-backend:latest \
-                      --insecure \
-                      --skip-tls-verify
-                    """
-                }
-            }
-        }
-        stage('Deploy to Kubernetes') {
-            steps {
-                container('kubectl') {
-                    sh """
-                    kubectl set image deployment/ilmiya-backend backend=k3d-dev-registry:5000/ilmiya-backend:${BUILD_NUMBER} --namespace=default
-                    kubectl rollout status deployment/ilmiya-backend --timeout=180s --namespace=default
-                    """
-                }
-            }
-        }
-    }
-}
-```
-
-### Frontend Pipeline (`ilmiya-frontend/Jenkinsfile`)
-```groovy
-pipeline {
-    agent {
-        kubernetes {
-            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-    - name: kaniko
-      image: gcr.io/kaniko-project/executor:debug
-      command: ['/busybox/cat']
-      tty: true
-    - name: kubectl
-      image: bitnami/kubectl:latest
-      command: ['cat']
-      tty: true
-"""
-        }
-    }
-    stages {
-        stage('Build & Push Frontend') {
-            steps {
-                container('kaniko') {
-                    sh """
-                    /kaniko/executor \
-                      --context=dir://. \
-                      --dockerfile=Dockerfile \
-                      --destination=k3d-dev-registry:5000/ilmiya-frontend:${BUILD_NUMBER} \
-                      --destination=k3d-dev-registry:5000/ilmiya-frontend:latest \
-                      --insecure \
-                      --skip-tls-verify
-                    """
-                }
-            }
-        }
-        stage('Deploy to Kubernetes') {
-            steps {
-                container('kubectl') {
-                    sh """
-                    kubectl set image deployment/ilmiya-frontend frontend=k3d-dev-registry:5000/ilmiya-frontend:${BUILD_NUMBER} --namespace=default
-                    kubectl rollout status deployment/ilmiya-frontend --timeout=120s --namespace=default
-                    """
-                }
-            }
-        }
-    }
-}
-```
+1. **Building Images with Kaniko**:
+   In your application pipeline, use the dynamic Kubernetes agent with `gcr.io/kaniko-project/executor:debug` to build and push to `k3d-dev-registry:5000/<your-image>:<tag>`.
+2. **Reverse Proxy & Single Domain**:
+   If deploying a Frontend SPA and Backend REST API together, route them in an Ingress under a single host (e.g., `<app>.localhost` with `/` to the frontend and `/api` to the backend). This avoids CORS issues and port conflicts.
+3. **Secret Injection**:
+   Annotate application pods with `vault.hashicorp.com/agent-inject: "true"` to have Vault inject secrets into `/vault/secrets/`.
 
 ---
 
-## 9. Troubleshooting & FAQ
+## 8. Troubleshooting & FAQ
 
 ### 1. `net::ERR_CERT_AUTHORITY_INVALID` in Chrome / Chromium
 - **Cause**: Linux browsers use their own NSS database (`~/.pki/nssdb`) instead of `/etc/ssl/certs`. Without `certutil`, `mkcert -install` cannot automatically register the CA.
@@ -564,7 +404,7 @@ spec:
 
 ### 2. `curl: (60) SSL: no alternative certificate subject name matches target hostname`
 - **Cause**: OpenSSL adheres strictly to RFC 6125 §6.4.3, which rejects wildcards matching single-label TLDs (`*.localhost`).
-- **Fix**: Re-issue certificates with explicit Subject Alternative Names (`vault.localhost`, `consul.localhost`, `jenkins.localhost`, `ilmiya.localhost`).
+- **Fix**: Re-issue certificates with explicit Subject Alternative Names (`vault.localhost`, `consul.localhost`, `jenkins.localhost`).
 
 ### 3. Webhook Failures on Pod Creation
 - **Symptom**: `failed calling webhook consul-connect-injector.consul.hashicorp.com: no endpoints available`
@@ -576,12 +416,10 @@ spec:
 
 ---
 
-## 10. Dashboard URLs & Access Directory
+## 9. Dashboard URLs & Access Directory
 
 | Component | Protocol & Port | URL | Credentials |
 | :--- | :--- | :--- | :--- |
-| **Ilmiya Frontend (Flutter Web)** | HTTPS (443) | `https://ilmiya.localhost` | - |
-| **Ilmiya API Docs (Swagger UI)** | HTTPS (443) | `https://ilmiya.localhost/swagger-ui.html` | - |
 | **Jenkins CI/CD** | HTTPS (443) | `https://jenkins.localhost` | `admin` / `admin123` |
 | **HashiCorp Vault UI** | HTTPS (443) | `https://vault.localhost/ui/` | Token: `root` |
 | **HashiCorp Consul UI** | HTTPS (443) | `https://consul.localhost/ui/` | No auth required |

@@ -1,13 +1,12 @@
-# Local DevOps Lab (k3d + Jenkins + Vault + Consul + Microservices)
+# Local DevOps Lab (k3d + Jenkins + Vault + Consul)
 
-This repository sets up a complete, rootless-compatible local Kubernetes DevOps environment containing:
+This repository sets up a complete, rootless-compatible local Kubernetes DevOps platform containing:
 - **k3d (k3s in Docker/Podman)** with built-in Traefik Ingress Controller
 - **Local Container Registry** (`localhost:5000` from host, `k3d-dev-registry:5000` from cluster)
 - **Jenkins CI/CD** with dynamic Kubernetes Pod agents and Kaniko builders
 - **HashiCorp Vault** (with Vault Agent Injector for secret injection)
 - **HashiCorp Consul** (Service discovery & mesh)
-- **Clean Standard Ports & Zero-Warning TLS**: Ports `80` (HTTP) and `443` (HTTPS) with `mkcert` root CA certificates
-- **Flutter Web & Spring Boot Microservices Stack**: Unified under `https://ilmiya.localhost` (zero CORS)
+- **Clean Standard Ports & Zero-Warning TLS**: Standard ports `80` (HTTP) and `443` (HTTPS) with `mkcert` root CA certificates
 
 ---
 
@@ -17,8 +16,6 @@ All services run on **standard ports (80 / 443)** with **valid local TLS certifi
 
 | Service | Local URL | Credentials / Tokens |
 | :--- | :--- | :--- |
-| **Ilmiya App (FE + BE)** | [https://ilmiya.localhost](https://ilmiya.localhost) | Reverse-proxying FE & BE together |
-| **Backend API Docs** | [https://ilmiya.localhost/swagger-ui.html](https://ilmiya.localhost/swagger-ui.html) | OpenAPI / Swagger UI |
 | **Jenkins CI/CD** | [https://jenkins.localhost](https://jenkins.localhost) | User: `admin` <br> Password: `admin123` |
 | **HashiCorp Vault** | [https://vault.localhost/ui](https://vault.localhost/ui) | Method: `Token` <br> Token: `root` |
 | **HashiCorp Consul** | [https://consul.localhost/ui](https://consul.localhost/ui) | Service Discovery & Key-Value |
@@ -28,11 +25,10 @@ All services run on **standard ports (80 / 443)** with **valid local TLS certifi
 
 ---
 
-## Architecture & Microservices Interconnection
+## Architecture & Setup Guide
 
-For detailed setup on interconnecting Flutter Web and Kotlin Spring Boot under a single origin and configuring Jenkins pipelines, see:
-- [Microservices Interconnection & CI/CD Guide](file:///home/edmaputra/Projects/ed-devops/docs/CICD_AND_INTERCONNECTION_GUIDE.md)
-- [Complete Environment Setup Guide](file:///home/edmaputra/Projects/ed-devops/docs/SETUP_GUIDE.md)
+For a comprehensive step-by-step installation, rootless cgroup delegation, sysctl port binding, and browser NSS trust store configuration, see:
+- [Complete Environment Setup Guide](docs/SETUP_GUIDE.md)
 
 ---
 
@@ -45,10 +41,10 @@ make status
 # Display the dashboard URLs and passwords
 make urls
 
-# Deploy Ilmiya stack (PostgreSQL, Backend, Frontend, and Ingress)
-make deploy-apps
+# Generate local wildcard TLS certificates (mkcert)
+make generate-certs
 
-# Re-deploy all infrastructure & applications
+# Re-deploy all platform services, TLS, and Ingress
 make deploy-all
 
 # Stop and delete cluster & registry

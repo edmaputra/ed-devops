@@ -10,7 +10,6 @@ spec:
         - vault.localhost
         - consul.localhost
         - jenkins.localhost
-        - ilmiya.localhost
       secretName: local-wildcard-tls
   rules:
     - host: vault.localhost
