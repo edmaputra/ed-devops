@@ -1,0 +1,24 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: dev-cluster
+servers: 1
+agents: 0
+kubeAPI:
+  hostPort: "6443"
+ports:
+  - port: 80:80
+    nodeFilters:
+      - loadbalancer
+  - port: 443:443
+    nodeFilters:
+      - loadbalancer
+registries:
+  use:
+    - k3d-dev-registry:5000
+options:
+  k3s:
+    extraArgs:
+      - arg: "--kubelet-arg=feature-gates=KubeletInUserNamespace=true"
+        nodeFilters:
+          - server:0

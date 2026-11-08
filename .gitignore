@@ -1,0 +1,9 @@
+# Local TLS Certificates & Private Keys (generated locally via mkcert)
+certs/*.pem
+!certs/.gitkeep
+
+# Operating System & Editor Files
+.DS_Store
+*.log
+.idea/
+.vscode/
