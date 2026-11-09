@@ -1,6 +1,6 @@
 # Complete Step-by-Step Setup Guide: Local Kubernetes DevOps Laboratory
 
-This guide explains in detail how the entire local DevOps platform is architected and built from scratch using **k3d**, **Rootless Podman**, **Jenkins**, **ArgoCD**, **HashiCorp Vault**, **HashiCorp Consul**, **mkcert Local TLS**, and **Traefik Ingress**.
+This guide explains in detail how the entire local DevOps platform is architected and built from scratch using **k3d**, **Rootless Podman**, **Jenkins**, **ArgoCD**, **SonarQube**, **PostgreSQL**, **HashiCorp Vault**, **HashiCorp Consul**, **mkcert Local TLS**, and **Traefik Ingress**.
 
 ---
 
@@ -9,6 +9,7 @@ This guide explains in detail how the entire local DevOps platform is architecte
 ```mermaid
 graph TD
     User([Browser / Developer]) -->|HTTPS Port 443 / HTTP Port 80| Traefik[Traefik Ingress Controller<br/>Ports 80 & 443 with local-wildcard-tls]
+    User -->|TCP Port 5432| Postgres[PostgreSQL Latest<br/>Port 5432]
     
     subgraph Host [Host Machine - Ubuntu Linux / Rootless Podman]
         subgraph PodmanNet [Podman Network: podman]
@@ -22,11 +23,14 @@ graph TD
                 Traefik -->|https://consul.localhost| Consul[HashiCorp Consul<br/>Port 80]
                 Traefik -->|https://app.localhost| Apps[Deployed Applications]
                 
+                Apps -->|Database Connection| Postgres
+                
                 Jenkins -.->|Dynamic agent pods via Kaniko| K8sAgents[Kubernetes Build Agents]
                 K8sAgents -.->|Code Quality Scan| SonarQube
                 K8sAgents -.->|Push Images| Reg
                 
                 ArgoCD -.->|Sync & Reconcile Manifests| Apps
+                ArgoCD -.->|Sync & Reconcile| Postgres
                 VaultInjector[Vault Agent Injector] -.->|Injects Secrets| Apps
             end
         end
@@ -422,7 +426,58 @@ helm upgrade --install sonarqube sonarqube/sonarqube -f helm/sonarqube/values.ya
 
 ---
 
-### Step 6.6: Ingress for Platform Services
+### Step 6.6: PostgreSQL Latest Database
+PostgreSQL Latest is packaged as a local Helm chart in `helm/postgres` and declarative Kubernetes manifests in `manifests/postgres`. It provides persistent storage via `local-path`, automated initialization of application databases and users (including `ilmiya_db` for `ilmiya` and `uwati` for `uwati`), and dual service aliases (`postgres` and `postgresql`).
+
+Configuration (`helm/postgres/values.yaml`):
+```yaml
+fullnameOverride: "postgres"
+
+image:
+  repository: postgres
+  tag: latest
+  pullPolicy: IfNotPresent
+
+auth:
+  postgresPassword: "P0stgr3s_L4b_Adm!n#2026"
+  database: "postgres"
+  ilmiya:
+    database: "ilmiya_db"
+    user: "ilmiya_user"
+    password: "Ilm!y4_Db_P@ss2026#Secure"
+  uwati:
+    database: "uwati"
+    user: "uwati"
+    password: "Uwat!_Db_P@ss2026#Secure"
+
+persistence:
+  enabled: true
+  storageClass: "local-path"
+  size: "5Gi"
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1024Mi"
+
+service:
+  type: LoadBalancer
+  port: 5432
+```
+
+Deploy:
+```bash
+make deploy-postgres
+# Or directly with Helm:
+# helm upgrade --install postgres helm/postgres --timeout 15m
+```
+
+---
+
+### Step 6.7: Ingress for Platform Services
 Defined in `manifests/ingress/local-ingress.yaml`:
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -510,7 +565,7 @@ kubectl apply -f manifests/ingress/local-ingress.yaml
 
 ---
 
-### Step 6.7: Grant Deployer Permissions to Jenkins Agents
+### Step 6.8: Grant Deployer Permissions to Jenkins Agents
 To allow Jenkins agent pods to create and update application workloads in the `default` namespace:
 
 ```bash
@@ -519,7 +574,7 @@ kubectl apply -f manifests/jenkins/jenkins-deployer-rbac.yaml
 
 ---
 
-### Step 6.8: Seed Centralized Local Deployment Pipelines
+### Step 6.9: Seed Centralized Local Deployment Pipelines
 To maintain total decoupling between application repositories and platform infrastructure, Jenkins uses centralized inline pipelines rather than reading `Jenkinsfile` from app repositories.
 
 The pipelines are stored under `pipelines/`:
@@ -541,8 +596,43 @@ When deploying microservices to this lab:
    In your application pipeline, use the dynamic Kubernetes agent with `gcr.io/kaniko-project/executor:debug` to build and push to `k3d-dev-registry:5000/<your-image>:<tag>`.
 2. **Reverse Proxy & Single Domain**:
    If deploying a Frontend SPA and Backend REST API together, route them in an Ingress under a single host (e.g., `<app>.localhost` with `/` to the frontend and `/api` to the backend). This avoids CORS issues and port conflicts.
-3. **Secret Injection**:
-   Annotate application pods with `vault.hashicorp.com/agent-inject: "true"` to have Vault inject secrets into `/vault/secrets/`.
+3. **Centralized Configuration & Secrets with HashiCorp Consul & Vault**:
+   The platform implements a clean separation of concerns:
+   - **HashiCorp Consul KV**: Distributed application configuration, feature flags, log levels, and non-sensitive business properties (`config/<app-name>/data` and `config/application/data`). Seeded via:
+     ```bash
+     make setup-consul-config
+     ```
+   - **HashiCorp Vault**: Encrypted secrets, database credentials, and cryptographic keys (`secret/database/<app-name>`). Seeded via:
+     ```bash
+     make setup-vault-secrets
+     ```
+   - In your application Deployment manifest, configure Spring Cloud Consul and Vault sidecar injection simultaneously:
+     ```yaml
+     metadata:
+       annotations:
+         vault.hashicorp.com/agent-inject: "true"
+         vault.hashicorp.com/role: "ilmiya-backend"
+         vault.hashicorp.com/agent-inject-secret-database.properties: "secret/data/database/ilmiya"
+         vault.hashicorp.com/agent-inject-template-database.properties: |
+           {{- with secret "secret/data/database/ilmiya" -}}
+           spring.datasource.url={{ .Data.data.url }}
+           spring.datasource.username={{ .Data.data.username }}
+           spring.datasource.password={{ .Data.data.password }}
+           {{- end }}
+     spec:
+       serviceAccountName: ilmiya-backend
+       containers:
+         - name: backend
+           env:
+             # Imports both Consul KV configuration and Vault secrets
+             - name: SPRING_CONFIG_IMPORT
+               value: "optional:consul:,optional:file:/vault/secrets/database.properties"
+             - name: SPRING_CLOUD_CONSUL_HOST
+               value: "consul-server"
+             - name: SPRING_CLOUD_CONSUL_PORT
+               value: "8500"
+     ```
+   - Spring Boot dynamically binds properties from both Consul KV and Vault at startup with zero configuration in Git.
 4. **Integration Testing with Testcontainers in Jenkins Agent Pods**:
    Java Spring Boot microservices utilizing Testcontainers (e.g. `testcontainers-postgresql`) require access to a container engine:
    - **On GitHub Actions**: Docker is natively available out of the box.
@@ -602,6 +692,7 @@ When deploying microservices to this lab:
 | **Jenkins CI/CD** | HTTPS (443) | `https://jenkins.localhost` | `admin` / `admin123` |
 | **ArgoCD GitOps** | HTTPS (443) | `https://argocd.localhost` | `admin` / `admin123` |
 | **SonarQube** | HTTPS (443) | `https://sonar.localhost` | `admin` / `admin` |
+| **PostgreSQL** | TCP (5432) | `postgres:5432` (k8s) / `localhost:5432` (host) | Superuser: `postgres` / `P0stgr3s_L4b_Adm!n#2026`<br>Ilmiya: `ilmiya_db` / `ilmiya_user` / `Ilm!y4_Db_P@ss2026#Secure`<br>Uwati: `uwati` / `uwati` / `Uwat!_Db_P@ss2026#Secure` |
 | **HashiCorp Vault UI** | HTTPS (443) | `https://vault.localhost/ui/` | Token: `root` |
 | **HashiCorp Consul UI** | HTTPS (443) | `https://consul.localhost/ui/` | No auth required |
 | **Local Container Registry** | HTTP (5000) | `http://localhost:5000/v2/_catalog` | Docker Registry API |

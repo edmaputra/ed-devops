@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.fullnameOverride }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.fullnameOverride }}
+spec:
+  serviceName: {{ .Values.fullnameOverride }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.fullnameOverride }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.fullnameOverride }}
+    spec:
+      containers:
+        - name: postgres
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: postgresql
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.fullnameOverride }}-secret
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.fullnameOverride }}-secret
+                  key: POSTGRES_DB
+            - name: ILMIYA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.fullnameOverride }}-secret
+                  key: ILMIYA_USER
+            - name: ILMIYA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.fullnameOverride }}-secret
+                  key: ILMIYA_PASSWORD
+            - name: ILMIYA_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.fullnameOverride }}-secret
+                  key: ILMIYA_DB
+            - name: UWATI_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.fullnameOverride }}-secret
+                  key: UWATI_USER
+            - name: UWATI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.fullnameOverride }}-secret
+                  key: UWATI_PASSWORD
+            - name: UWATI_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.fullnameOverride }}-secret
+                  key: UWATI_DB
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U postgres -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U postgres -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: initdb
+          configMap:
+            name: {{ .Values.fullnameOverride }}-initdb
+            defaultMode: 0755
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.fullnameOverride }}-data
+        {{- else }}
+        - name: data
+          emptyDir: {}
+        {{- end }}

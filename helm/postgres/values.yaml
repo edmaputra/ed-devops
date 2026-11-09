@@ -1,0 +1,35 @@
+fullnameOverride: "postgres"
+
+image:
+  repository: postgres
+  tag: latest
+  pullPolicy: IfNotPresent
+
+auth:
+  postgresPassword: "P0stgr3s_L4b_Adm!n#2026"
+  database: "postgres"
+  ilmiya:
+    database: "ilmiya_db"
+    user: "ilmiya_user"
+    password: "Ilm!y4_Db_P@ss2026#Secure"
+  uwati:
+    database: "uwati"
+    user: "uwati"
+    password: "Uwat!_Db_P@ss2026#Secure"
+
+persistence:
+  enabled: true
+  storageClass: "local-path"
+  size: "5Gi"
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1024Mi"
+
+service:
+  type: LoadBalancer
+  port: 5432

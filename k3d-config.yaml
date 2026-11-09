@@ -13,6 +13,9 @@ ports:
   - port: 443:443
     nodeFilters:
       - loadbalancer
+  - port: 5432:5432
+    nodeFilters:
+      - loadbalancer
 registries:
   use:
     - k3d-dev-registry:5000
