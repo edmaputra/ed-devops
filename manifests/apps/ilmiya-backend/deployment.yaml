@@ -1,3 +1,11 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ilmiya-backend
+  namespace: default
+  labels:
+    app.kubernetes.io/name: ilmiya-backend
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,7 +22,19 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: ilmiya-backend
+      annotations:
+        # HashiCorp Vault Agent Injector
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "ilmiya-backend"
+        vault.hashicorp.com/agent-inject-secret-database.properties: "secret/data/database/ilmiya"
+        vault.hashicorp.com/agent-inject-template-database.properties: |
+          {{- with secret "secret/data/database/ilmiya" -}}
+          spring.datasource.url={{ .Data.data.url }}
+          spring.datasource.username={{ .Data.data.username }}
+          spring.datasource.password={{ .Data.data.password }}
+          {{- end }}
     spec:
+      serviceAccountName: ilmiya-backend
       containers:
         - name: ilmiya-backend
           image: k3d-dev-registry:5000/ilmiya-backend:latest
@@ -27,6 +47,28 @@ spec:
               value: "local"
             - name: SERVER_PORT
               value: "8080"
+            # Import both Consul KV configuration and Vault injected secrets
+            - name: SPRING_CONFIG_IMPORT
+              value: "optional:consul:,optional:file:/vault/secrets/database.properties"
+            # HashiCorp Consul KV Configuration Settings
+            - name: SPRING_CLOUD_CONSUL_ENABLED
+              value: "true"
+            - name: SPRING_CLOUD_CONSUL_HOST
+              value: "consul-server"
+            - name: SPRING_CLOUD_CONSUL_PORT
+              value: "8500"
+            - name: SPRING_CLOUD_CONSUL_CONFIG_ENABLED
+              value: "true"
+            - name: SPRING_CLOUD_CONSUL_CONFIG_FORMAT
+              value: "YAML"
+            - name: SPRING_CLOUD_CONSUL_CONFIG_PREFIX
+              value: "config"
+            - name: SPRING_CLOUD_CONSUL_CONFIG_DEFAULT_CONTEXT
+              value: "application"
+            - name: SPRING_CLOUD_CONSUL_CONFIG_DATA_KEY
+              value: "data"
+            - name: SPRING_CLOUD_CONSUL_DISCOVERY_ENABLED
+              value: "false"
           resources:
             requests:
               cpu: 250m

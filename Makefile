@@ -1,4 +1,4 @@
-.PHONY: help status cluster-up cluster-down deploy-vault deploy-consul deploy-jenkins deploy-argocd deploy-sonarqube deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all urls generate-certs create-tls-secret
+.PHONY: help status cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all urls generate-certs create-tls-secret
 
 help:
 	@echo "Available commands:"
@@ -8,6 +8,9 @@ help:
 	@echo "  make create-tls-secret   - Create Kubernetes secret with local wildcard TLS cert"
 	@echo "  make deploy-vault        - Deploy or upgrade HashiCorp Vault via Helm"
 	@echo "  make deploy-consul       - Deploy or upgrade HashiCorp Consul via Helm"
+	@echo "  make deploy-postgres     - Deploy or upgrade PostgreSQL via Helm"
+	@echo "  make setup-vault-secrets - Configure Vault Kubernetes auth and app database secrets"
+	@echo "  make setup-consul-config - Seed application configuration into HashiCorp Consul KV"
 	@echo "  make deploy-jenkins      - Deploy or upgrade Jenkins CI/CD via Helm"
 	@echo "  make deploy-argocd       - Deploy or upgrade ArgoCD via Helm"
 	@echo "  make deploy-sonarqube    - Deploy or upgrade SonarQube via Helm"
@@ -35,6 +38,7 @@ urls:
 	@echo " SonarQube  : https://sonar.localhost     (User: admin, Pass: admin)"
 	@echo " Vault      : https://vault.localhost/ui  (Root Token: root)"
 	@echo " Consul     : https://consul.localhost/ui"
+	@echo " PostgreSQL : postgres:5432 / localhost:5432 (Admin: postgres / P0stgr3s_L4b_Adm!n#2026 | ilmiya_db: ilmiya_user / Ilm!y4_Db_P@ss2026#Secure | uwati: uwati / Uwat!_Db_P@ss2026#Secure)"
 	@echo " Registry   : http://localhost:5000/v2/_catalog"
 	@echo "=========================================================="
 
@@ -51,6 +55,15 @@ deploy-vault:
 
 deploy-consul:
 	helm upgrade --install consul hashicorp/consul -f helm/consul/values.yaml --timeout 15m
+
+deploy-postgres:
+	helm upgrade --install postgres helm/postgres --timeout 15m
+
+setup-vault-secrets:
+	./scripts/setup-vault-secrets.sh
+
+setup-consul-config:
+	./scripts/setup-consul-config.sh
 
 deploy-jenkins:
 	helm upgrade --install jenkins jenkins/jenkins -f helm/jenkins/values.yaml --timeout 15m
@@ -70,7 +83,7 @@ deploy-jenkins-rbac:
 seed-jobs:
 	./scripts/seed-jenkins-jobs.sh
 
-deploy-all: deploy-vault deploy-consul deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube create-tls-secret deploy-ingress seed-jobs
+deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube create-tls-secret deploy-ingress seed-jobs
 
 cluster-up:
 	k3d registry create --default-network podman dev-registry --port 0.0.0.0:5000 || true

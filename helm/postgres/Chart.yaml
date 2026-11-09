@@ -1,0 +1,6 @@
+apiVersion: v2
+name: postgres
+description: Official PostgreSQL Latest for Local DevOps Lab
+type: application
+version: 1.0.0
+appVersion: "latest"

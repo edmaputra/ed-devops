@@ -1,4 +1,4 @@
-# Local DevOps Lab (k3d + Jenkins + ArgoCD + SonarQube + Vault + Consul)
+# Local DevOps Lab (k3d + Jenkins + ArgoCD + SonarQube + Vault + Consul + PostgreSQL)
 
 This repository sets up a complete, rootless-compatible local Kubernetes DevOps platform containing:
 - **k3d (k3s in Docker/Podman)** with built-in Traefik Ingress Controller
@@ -6,6 +6,7 @@ This repository sets up a complete, rootless-compatible local Kubernetes DevOps 
 - **Jenkins CI/CD** with dynamic Kubernetes Pod agents and Kaniko builders
 - **ArgoCD GitOps CD** for declarative Kubernetes deployment and drift reconciliation
 - **SonarQube** for automated code quality, security analysis, and Quality Gate enforcement
+- **PostgreSQL Latest** database service with automatic application user/database initialization
 - **HashiCorp Vault** (with Vault Agent Injector for secret injection)
 - **HashiCorp Consul** (Service discovery & mesh)
 - **Clean Standard Ports & Zero-Warning TLS**: Standard ports `80` (HTTP) and `443` (HTTPS) with `mkcert` root CA certificates
@@ -21,6 +22,7 @@ All services run on **standard ports (80 / 443)** with **valid local TLS certifi
 | **Jenkins CI/CD** | [https://jenkins.localhost](https://jenkins.localhost) | User: `admin` <br> Password: `admin123` |
 | **ArgoCD GitOps** | [https://argocd.localhost](https://argocd.localhost) | User: `admin` <br> Password: `admin123` |
 | **SonarQube** | [https://sonar.localhost](https://sonar.localhost) | User: `admin` <br> Password: `admin` |
+| **PostgreSQL** | `postgres:5432` (k8s) <br> `localhost:5432` (host) | Superuser: `postgres` / `P0stgr3s_L4b_Adm!n#2026`<br>Ilmiya DB: `ilmiya_db` / `ilmiya_user` / `Ilm!y4_Db_P@ss2026#Secure`<br>Uwati DB: `uwati` / `uwati` / `Uwat!_Db_P@ss2026#Secure` |
 | **HashiCorp Vault** | [https://vault.localhost/ui](https://vault.localhost/ui) | Method: `Token` <br> Token: `root` |
 | **HashiCorp Consul** | [https://consul.localhost/ui](https://consul.localhost/ui) | Service Discovery & Key-Value |
 | **Local Registry** | [http://localhost:5000/v2/_catalog](http://localhost:5000/v2/_catalog) | Docker registry endpoint |
@@ -47,6 +49,9 @@ make urls
 
 # Generate local wildcard TLS certificates (mkcert)
 make generate-certs
+
+# Deploy or upgrade PostgreSQL
+make deploy-postgres
 
 # Deploy or upgrade ArgoCD
 make deploy-argocd

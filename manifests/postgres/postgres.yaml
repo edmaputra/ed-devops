@@ -1,0 +1,250 @@
+---
+# Source: postgres/templates/secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  labels:
+    app.kubernetes.io/name: postgres
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: "P0stgr3s_L4b_Adm!n#2026"
+  POSTGRES_DB: "postgres"
+  ILMIYA_DB: "ilmiya_db"
+  ILMIYA_USER: "ilmiya_user"
+  ILMIYA_PASSWORD: "Ilm!y4_Db_P@ss2026#Secure"
+  UWATI_DB: "uwati"
+  UWATI_USER: "uwati"
+  UWATI_PASSWORD: "Uwat!_Db_P@ss2026#Secure"
+---
+# Source: postgres/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-initdb
+  labels:
+    app.kubernetes.io/name: postgres
+data:
+  01-init-app-databases.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "=== Initializing Application Databases and Users ==="
+
+    # Provision Ilmiya
+    if [ -n "$ILMIYA_USER" ] && [ -n "$ILMIYA_PASSWORD" ] && [ -n "$ILMIYA_DB" ]; then
+      echo "Configuring Ilmiya database ($ILMIYA_DB) and user ($ILMIYA_USER)..."
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+        DO \$\$
+        BEGIN
+          IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '$ILMIYA_USER') THEN
+            CREATE ROLE "$ILMIYA_USER" WITH LOGIN PASSWORD '$ILMIYA_PASSWORD';
+          ELSE
+            ALTER ROLE "$ILMIYA_USER" WITH PASSWORD '$ILMIYA_PASSWORD';
+          END IF;
+        END
+        \$\$;
+
+        SELECT 'CREATE DATABASE "$ILMIYA_DB" OWNER "$ILMIYA_USER"'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$ILMIYA_DB')\gexec
+
+        GRANT ALL PRIVILEGES ON DATABASE "$ILMIYA_DB" TO "$ILMIYA_USER";
+    EOSQL
+
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$ILMIYA_DB" <<-EOSQL
+        GRANT ALL ON SCHEMA public TO "$ILMIYA_USER";
+        ALTER SCHEMA public OWNER TO "$ILMIYA_USER";
+        CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+        CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    EOSQL
+      echo "Ilmiya successfully configured."
+    fi
+
+    # Provision Uwati
+    if [ -n "$UWATI_USER" ] && [ -n "$UWATI_PASSWORD" ] && [ -n "$UWATI_DB" ]; then
+      echo "Configuring Uwati database ($UWATI_DB) and user ($UWATI_USER)..."
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+        DO \$\$
+        BEGIN
+          IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '$UWATI_USER') THEN
+            CREATE ROLE "$UWATI_USER" WITH LOGIN PASSWORD '$UWATI_PASSWORD';
+          ELSE
+            ALTER ROLE "$UWATI_USER" WITH PASSWORD '$UWATI_PASSWORD';
+          END IF;
+        END
+        \$\$;
+
+        SELECT 'CREATE DATABASE "$UWATI_DB" OWNER "$UWATI_USER"'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$UWATI_DB')\gexec
+
+        GRANT ALL PRIVILEGES ON DATABASE "$UWATI_DB" TO "$UWATI_USER";
+    EOSQL
+
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$UWATI_DB" <<-EOSQL
+        GRANT ALL ON SCHEMA public TO "$UWATI_USER";
+        ALTER SCHEMA public OWNER TO "$UWATI_USER";
+        CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+        CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    EOSQL
+      echo "Uwati successfully configured."
+    fi
+
+    echo "=== Application Databases Initialization Complete ==="
+---
+# Source: postgres/templates/pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+---
+# Source: postgres/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  type: LoadBalancer
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: 5432
+  selector:
+    app.kubernetes.io/name: postgres
+---
+# Source: postgres/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: 5432
+  selector:
+    app.kubernetes.io/name: postgres
+---
+# Source: postgres/templates/statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: "postgres:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgresql
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_DB
+            - name: ILMIYA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: ILMIYA_USER
+            - name: ILMIYA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: ILMIYA_PASSWORD
+            - name: ILMIYA_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: ILMIYA_DB
+            - name: UWATI_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: UWATI_USER
+            - name: UWATI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: UWATI_PASSWORD
+            - name: UWATI_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: UWATI_DB
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U postgres -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - exec pg_isready -U postgres -h 127.0.0.1 -p 5432
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 1024Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: initdb
+          configMap:
+            name: postgres-initdb
+            defaultMode: 0755
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
