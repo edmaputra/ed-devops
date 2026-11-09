@@ -164,7 +164,9 @@ mkcert -cert-file certs/local-cert.pem -key-file certs/local-key.pem \
   jenkins.localhost \
   argocd.localhost \
   sonar.localhost \
-  sonarqube.localhost
+  sonarqube.localhost \
+  ilmiya.localhost \
+  "*.ilmiya.localhost"
 ```
 
 ---

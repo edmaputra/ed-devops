@@ -45,7 +45,7 @@ urls:
 generate-certs:
 	mkdir -p certs
 	mkcert -cert-file certs/local-cert.pem -key-file certs/local-key.pem \
-		localhost "*.localhost" vault.localhost consul.localhost jenkins.localhost argocd.localhost sonar.localhost sonarqube.localhost
+		localhost "*.localhost" vault.localhost consul.localhost jenkins.localhost argocd.localhost sonar.localhost sonarqube.localhost ilmiya.localhost "*.ilmiya.localhost"
 
 create-tls-secret:
 	kubectl create secret tls local-wildcard-tls --cert=certs/local-cert.pem --key=certs/local-key.pem --dry-run=client -o yaml | kubectl apply -f -
