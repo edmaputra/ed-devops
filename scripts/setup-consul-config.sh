@@ -47,4 +47,11 @@ uwati:
   cache:
     enabled: true'
 
+# 4. Ilmiya Frontend configuration (config/ilmiya-frontend/data)
+put_kv "config/ilmiya-frontend/data" 'app:
+  title: "Ilmiya SIS"
+  apiBaseUrl: "https://ilmiya.localhost"
+  defaultTenantId: "01940000-0000-7000-8000-000000000001"
+  mockMode: false'
+
 echo "==> HashiCorp Consul KV properties successfully seeded!"

@@ -1,3 +1,11 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ilmiya-frontend
+  namespace: default
+  labels:
+    app.kubernetes.io/name: ilmiya-frontend
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,7 +22,21 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: ilmiya-frontend
+      annotations:
+        # HashiCorp Vault Agent Injector
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "ilmiya-frontend"
+        vault.hashicorp.com/agent-inject-secret-config.json: "secret/data/frontend/ilmiya"
+        vault.hashicorp.com/agent-inject-template-config.json: |
+          {{- with secret "secret/data/frontend/ilmiya" -}}
+          {
+            "apiBaseUrl": "{{ .Data.data.apiBaseUrl }}",
+            "defaultTenantId": "{{ .Data.data.defaultTenantId }}",
+            "mockMode": {{ .Data.data.mockMode }}
+          }
+          {{- end }}
     spec:
+      serviceAccountName: ilmiya-frontend
       containers:
         - name: ilmiya-frontend
           image: k3d-dev-registry:5000/ilmiya-frontend:latest
@@ -22,6 +44,18 @@ spec:
           ports:
             - containerPort: 80
               name: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 5
           resources:
             requests:
               cpu: 100m
