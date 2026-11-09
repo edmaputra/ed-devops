@@ -30,10 +30,24 @@ kubectl exec vault-0 -- vault kv put secret/database/uwati \
   password="Uwat!_Db_P@ss2026#Secure" \
   database="uwati"
 
+# Store Spring Cloud Vault application secrets
+echo "Writing Spring Cloud Vault secrets to Vault KV engine..."
+kubectl exec vault-0 -- vault kv put secret/ilmiya-backend \
+  spring.datasource.url="jdbc:postgresql://postgres:5432/ilmiya_db" \
+  spring.datasource.username="ilmiya_user" \
+  spring.datasource.password="Ilm!y4_Db_P@ss2026#Secure" \
+  iam.jwt.secret="super-secret-jwt-signing-key-for-ilmiya-school-platform-which-must-be-at-least-256-bits!"
+
 # Create Vault ACL policies
 echo "Applying Vault access policies..."
 kubectl exec -i vault-0 -- vault policy write ilmiya-policy - << 'EOF'
 path "secret/data/database/ilmiya" {
+  capabilities = ["read"]
+}
+path "secret/data/ilmiya-backend" {
+  capabilities = ["read"]
+}
+path "secret/data/application" {
   capabilities = ["read"]
 }
 EOF

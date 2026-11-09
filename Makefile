@@ -1,4 +1,4 @@
-.PHONY: help status cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all urls generate-certs create-tls-secret
+.PHONY: help status cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret
 
 help:
 	@echo "Available commands:"
@@ -84,6 +84,12 @@ seed-jobs:
 	./scripts/seed-jenkins-jobs.sh
 
 deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube create-tls-secret deploy-ingress seed-jobs
+
+deploy-apps:
+	kubectl apply -f manifests/apps/ilmiya-backend/deployment.yaml
+
+deploy-argocd-apps:
+	kubectl apply -f manifests/argocd/applications.yaml
 
 cluster-up:
 	k3d registry create --default-network podman dev-registry --port 0.0.0.0:5000 || true

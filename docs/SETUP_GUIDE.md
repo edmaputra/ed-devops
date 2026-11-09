@@ -602,11 +602,11 @@ When deploying microservices to this lab:
      ```bash
      make setup-consul-config
      ```
-   - **HashiCorp Vault**: Encrypted secrets, database credentials, and cryptographic keys (`secret/database/<app-name>`). Seeded via:
+   - **HashiCorp Vault**: Encrypted secrets, database credentials, and cryptographic keys (`secret/database/<app-name>` for agent injection and `secret/<app-name>` for Spring Cloud Vault). Seeded via:
      ```bash
      make setup-vault-secrets
      ```
-   - In your application Deployment manifest, configure Spring Cloud Consul and Vault sidecar injection simultaneously:
+   - In your application Deployment manifest, configure Spring Cloud Consul and Vault simultaneously (supporting both native Spring Cloud Vault and Vault sidecar injection):
      ```yaml
      metadata:
        annotations:
@@ -622,17 +622,25 @@ When deploying microservices to this lab:
      spec:
        serviceAccountName: ilmiya-backend
        containers:
-         - name: backend
+         - name: ilmiya-backend
+           image: k3d-dev-registry:5000/ilmiya-backend:latest
            env:
-             # Imports both Consul KV configuration and Vault secrets
+             - name: SPRING_PROFILES_ACTIVE
+               value: "local"
+             # Imports Consul KV configuration, Vault KV secrets, and injected properties
              - name: SPRING_CONFIG_IMPORT
-               value: "optional:consul:,optional:file:/vault/secrets/database.properties"
+               value: "optional:consul:,optional:vault://,optional:file:/vault/secrets/database.properties"
              - name: SPRING_CLOUD_CONSUL_HOST
                value: "consul-server"
              - name: SPRING_CLOUD_CONSUL_PORT
                value: "8500"
+             - name: SPRING_CLOUD_VAULT_URI
+               value: "http://vault:8200"
+             - name: SPRING_CLOUD_VAULT_TOKEN
+               value: "root"
      ```
    - Spring Boot dynamically binds properties from both Consul KV and Vault at startup with zero configuration in Git.
+   - Expose REST API, OpenAPI docs, Swagger UI, and Actuator health probes cleanly via Ingress under `ilmiya.localhost` (`/api`, `/swagger-ui`, `/api-docs`, `/actuator`).
 4. **Integration Testing with Testcontainers in Jenkins Agent Pods**:
    Java Spring Boot microservices utilizing Testcontainers (e.g. `testcontainers-postgresql`) require access to a container engine:
    - **On GitHub Actions**: Docker is natively available out of the box.
