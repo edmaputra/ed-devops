@@ -86,6 +86,27 @@ spec:
                 name: ilmiya-backend
                 port:
                   number: 8080
+          - path: /swagger-ui
+            pathType: Prefix
+            backend:
+              service:
+                name: ilmiya-backend
+                port:
+                  number: 8080
+          - path: /api-docs
+            pathType: Prefix
+            backend:
+              service:
+                name: ilmiya-backend
+                port:
+                  number: 8080
+          - path: /actuator
+            pathType: Prefix
+            backend:
+              service:
+                name: ilmiya-backend
+                port:
+                  number: 8080
           - path: /
             pathType: Prefix
             backend:

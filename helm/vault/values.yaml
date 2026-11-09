@@ -2,8 +2,47 @@ global:
   enabled: true
 server:
   dev:
+    enabled: false
+  standalone:
     enabled: true
-    devRootToken: "root"
+    config: |
+      ui = true
+
+      listener "tcp" {
+        tls_disable = 1
+        address = "[::]:8200"
+        cluster_address = "[::]:8201"
+      }
+      storage "file" {
+        path = "/vault/data"
+      }
+  dataStorage:
+    enabled: true
+    size: 2Gi
+    storageClass: "local-path"
+  extraContainers:
+    - name: auto-unseal
+      image: alpine:latest
+      command:
+        - /bin/sh
+        - -c
+        - |
+          while true; do
+            if [ -n "$VAULT_UNSEAL_KEY" ]; then
+              STATUS=$(wget -q -O - http://127.0.0.1:8200/v1/sys/seal-status 2>/dev/null || echo "")
+              if echo "$STATUS" | grep -q '"sealed":true'; then
+                wget -q -O - --post-data="{\"key\":\"$VAULT_UNSEAL_KEY\"}" http://127.0.0.1:8200/v1/sys/unseal > /dev/null 2>&1
+              fi
+            fi
+            sleep 3
+          done
+      env:
+        - name: VAULT_UNSEAL_KEY
+          valueFrom:
+            secretKeyRef:
+              name: vault-unseal-keys
+              key: unseal-key
+              optional: true
 ui:
   enabled: true
   serviceType: "ClusterIP"
