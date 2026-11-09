@@ -26,7 +26,7 @@ spec:
           memory: 512Mi
         limits:
           cpu: 2000m
-          memory: 2048Mi
+          memory: 3072Mi
 """
 
 podTemplate(yaml: podYaml) {
