@@ -110,9 +110,9 @@ start:
 
 stop:
 	@echo "Stopping k3d cluster and local registry..."
-	@podman stop k3d-dev-cluster-serverlb || true
-	@podman stop k3d-dev-cluster-server-0 || true
-	@podman stop k3d-dev-registry || true
+	@podman stop -t 2 k3d-dev-cluster-serverlb >/dev/null 2>&1 || true
+	@podman stop -t 10 k3d-dev-cluster-server-0 >/dev/null 2>&1 || podman kill k3d-dev-cluster-server-0 >/dev/null 2>&1 || true
+	@podman stop -t 2 k3d-dev-registry >/dev/null 2>&1 || true
 	@echo "Cluster and registry stopped successfully."
 
 cluster-up:
