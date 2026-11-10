@@ -28,6 +28,12 @@ resources:
 jvmOpts: "-Xms512m -Xmx1024m"
 jvmCeOpts: "-Xms256m -Xmx512m"
 
+# Startup probe tuning for local dev environments
+startupProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  failureThreshold: 60
+
 service:
   type: ClusterIP
   externalPort: 9000

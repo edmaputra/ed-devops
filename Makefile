@@ -1,4 +1,4 @@
-.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret
+.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret
 
 help:
 	@echo "Available commands:"
@@ -16,6 +16,7 @@ help:
 	@echo "  make deploy-jenkins      - Deploy or upgrade Jenkins CI/CD via Helm"
 	@echo "  make deploy-argocd       - Deploy or upgrade ArgoCD via Helm"
 	@echo "  make deploy-sonarqube    - Deploy or upgrade SonarQube via Helm"
+	@echo "  make setup-sonarqube-rules - Configure Java/Kotlin quality profiles and 80% coverage quality gate"
 	@echo "  make deploy-ingress      - Apply local Ingress configuration"
 	@echo "  make deploy-jenkins-rbac - Apply RBAC for Jenkins dynamic build agents"
 	@echo "  make seed-jobs           - Seed centralized local deployment pipeline jobs into Jenkins"
@@ -76,6 +77,9 @@ deploy-argocd:
 deploy-sonarqube:
 	helm upgrade --install sonarqube sonarqube/sonarqube -f helm/sonarqube/values.yaml --timeout 15m
 
+setup-sonarqube-rules:
+	./scripts/setup-sonarqube-rules.sh
+
 deploy-ingress:
 	kubectl apply -f manifests/ingress/local-ingress.yaml
 
@@ -85,7 +89,7 @@ deploy-jenkins-rbac:
 seed-jobs:
 	./scripts/seed-jenkins-jobs.sh
 
-deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube create-tls-secret deploy-ingress seed-jobs
+deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube setup-sonarqube-rules create-tls-secret deploy-ingress seed-jobs
 
 deploy-apps:
 	kubectl apply -f manifests/apps/ilmiya-backend/deployment.yaml
@@ -98,6 +102,7 @@ start:
 	@podman start k3d-dev-registry || true
 	@podman start k3d-dev-cluster-server-0 || true
 	@podman start k3d-dev-cluster-serverlb || true
+	@podman exec k3d-dev-cluster-serverlb nginx -s reload >/dev/null 2>&1 || true
 	@echo "Waiting for cluster control-plane to become ready..."
 	@until kubectl get nodes >/dev/null 2>&1; do sleep 1; done
 	@echo "Cluster is ready."

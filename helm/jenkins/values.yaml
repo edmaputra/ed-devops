@@ -2,6 +2,7 @@ controller:
   admin:
     username: "admin"
     password: "admin123"
+  jenkinsUrl: "https://jenkins.localhost"
   resources:
     requests:
       cpu: "200m"
@@ -20,7 +21,25 @@ controller:
   initContainerEnv:
     - name: JAVA_OPTS
       value: "-Xmx1024m -Xms256m"
-  installLatestPlugins: false
+  installLatestPlugins: true
+  overwritePlugins: true
+  additionalPlugins:
+    - "pipeline-stage-view:2.41"
+  probes:
+    startupProbe:
+      failureThreshold: 60
+      periodSeconds: 10
+      timeoutSeconds: 10
+    livenessProbe:
+      failureThreshold: 5
+      periodSeconds: 10
+      timeoutSeconds: 10
+    readinessProbe:
+      failureThreshold: 3
+      periodSeconds: 10
+      timeoutSeconds: 10
+  JCasC:
+    defaultConfig: true
 persistence:
   enabled: true
   size: "5Gi"
