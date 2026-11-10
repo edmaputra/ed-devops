@@ -41,6 +41,12 @@ For a comprehensive step-by-step installation, rootless cgroup delegation, sysct
 ## Quick Commands (`Makefile`)
 
 ```bash
+# Start an existing cluster & registry (preserves all data/apps)
+make start
+
+# Stop cluster & registry without losing data
+make stop
+
 # Check status of cluster nodes, pods, and ingress
 make status
 

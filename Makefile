@@ -1,7 +1,9 @@
-.PHONY: help status cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret
+.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret
 
 help:
 	@echo "Available commands:"
+	@echo "  make start               - Start existing k3d cluster and local registry"
+	@echo "  make stop                - Stop running k3d cluster and registry (preserves state)"
 	@echo "  make status              - Show cluster status, pods, and ingress"
 	@echo "  make urls                - Display all local access URLs and credentials"
 	@echo "  make generate-certs      - Generate local TLS certificates with explicit SANs via mkcert"
@@ -90,6 +92,23 @@ deploy-apps:
 
 deploy-argocd-apps:
 	kubectl apply -f manifests/argocd/applications.yaml
+
+start:
+	@echo "Starting local registry and k3d cluster..."
+	@podman start k3d-dev-registry || true
+	@podman start k3d-dev-cluster-server-0 || true
+	@podman start k3d-dev-cluster-serverlb || true
+	@echo "Waiting for cluster control-plane to become ready..."
+	@until kubectl get nodes >/dev/null 2>&1; do sleep 1; done
+	@echo "Cluster is ready."
+	@kubectl get nodes
+
+stop:
+	@echo "Stopping k3d cluster and local registry..."
+	@podman stop k3d-dev-cluster-serverlb || true
+	@podman stop k3d-dev-cluster-server-0 || true
+	@podman stop k3d-dev-registry || true
+	@echo "Cluster and registry stopped successfully."
 
 cluster-up:
 	k3d registry create --default-network podman dev-registry --port 0.0.0.0:5000 || true
