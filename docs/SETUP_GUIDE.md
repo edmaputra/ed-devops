@@ -426,6 +426,15 @@ Deploy:
 helm upgrade --install sonarqube sonarqube/sonarqube -f helm/sonarqube/values.yaml
 ```
 
+Configure Java/Kotlin Best Quality Profiles & 80% Coverage Quality Gate:
+```bash
+make setup-sonarqube-rules
+```
+This automatically configures:
+- **`Production Java`**: Extends `Sonar way` with Spring transaction bypass checks (`java:S2229`), singleton/prototype bean injection checks (`java:S6832`), `@Autowired` constructor rules (`java:S6829`), database password safety (`java:S2115`), `BigDecimal(double)` precision checks (`java:S2111`), `URL.equals/hashCode` DNS lookup hazards (`java:S2112`), and ReDoS regular expression protection (`java:S5852`).
+- **`Production Kotlin`**: Extends `Sonar way` with Kotlin coroutines & flow structured concurrency rules (`kotlin:S6306`, `kotlin:S6307`, `kotlin:S6309`, `kotlin:S6310`, `kotlin:S6311`), `Deferred` consumption (`kotlin:S6315`), hardcoded credentials (`kotlin:S2068`), plaintext password storage (`kotlin:S5344`), and cognitive complexity checks (`kotlin:S3776`).
+- **`Production Ready` Quality Gate**: Enforces `>= 80%` code coverage on both new and overall code, `<= 3%` duplicated lines, `0` new blocker/critical issues, and `100%` security hotspots reviewed.
+
 ---
 
 ### Step 6.6: PostgreSQL Latest Database
@@ -581,6 +590,9 @@ To maintain total decoupling between application repositories and platform infra
 
 The pipelines are stored under `pipelines/`:
 - `pipelines/local-deploy-backend.groovy` (Java / Kotlin Spring Boot Backend)
+  - **`RUN_TESTS=true` (Default)**: Executes all Gradle unit and integration tests with Testcontainers. Fails if any test fails.
+  - **Code Coverage Enforcement (`>= 80%`)**: Aggregates JaCoCo instruction and line coverage across all subprojects and automatically fails the build if code coverage falls below 80%.
+  - **`RUN_SONAR=true` (Default)**: Injects SonarQube Gradle plugin, binds JaCoCo aggregate XML coverage reports, and enforces SonarQube Quality Gate compliance (`sonar.qualitygate.wait=true`).
 - `pipelines/local-deploy-frontend.groovy` (Flutter Web Frontend)
 
 Seed or update these jobs in Jenkins at any time:

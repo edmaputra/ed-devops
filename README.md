@@ -65,7 +65,10 @@ make deploy-argocd
 # Deploy or upgrade SonarQube
 make deploy-sonarqube
 
-# Seed centralized local deployment pipeline jobs into Jenkins
+# Configure SonarQube best-practice Java/Kotlin profiles & 80% coverage Quality Gate
+make setup-sonarqube-rules
+
+# Seed centralized local deployment pipeline jobs into Jenkins (Tests, Coverage >= 80%, and SonarQube enabled by default)
 make seed-jobs
 
 # Re-deploy all platform services, TLS, and Ingress

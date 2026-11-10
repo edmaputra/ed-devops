@@ -3,10 +3,12 @@ properties([
         string(name: 'REPO_URL', defaultValue: 'git@github.com:edmaputra/ilmiya.git', description: 'Git repository URL'),
         string(name: 'BRANCH', defaultValue: 'main', description: 'Git branch or tag to deploy'),
         string(name: 'IMAGE_NAME', defaultValue: 'ilmiya-backend', description: 'Container image name'),
-        booleanParam(name: 'RUN_TESTS', defaultValue: false, description: 'Run Gradle integration tests with Testcontainers before packaging'),
-        booleanParam(name: 'RUN_SONAR', defaultValue: false, description: 'Run SonarQube code quality scan'),
+        booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run Gradle integration tests with Testcontainers and verify code coverage'),
+        string(name: 'MIN_COVERAGE', defaultValue: '80', description: 'Minimum required test code coverage percentage (default 80%)'),
+        booleanParam(name: 'RUN_SONAR', defaultValue: true, description: 'Run SonarQube code quality scan'),
         string(name: 'SONAR_URL', defaultValue: 'http://sonarqube:9000', description: 'SonarQube Server URL'),
         string(name: 'SONAR_TOKEN', defaultValue: 'squ_d814b7d57dff2b0b58a939e7b4993f04020f3587', description: 'SonarQube Authentication Token'),
+        booleanParam(name: 'SONAR_WAIT_QUALITY_GATE', defaultValue: true, description: 'Wait for SonarQube Quality Gate and fail build if gate fails'),
         booleanParam(name: 'TRIGGER_ROLLOUT', defaultValue: true, description: 'Trigger immediate rollout on k8s deployment if exists')
     ])
 ])
@@ -69,17 +71,74 @@ podTemplate(yaml: podYaml) {
         }
 
         if (params.RUN_TESTS) {
-            stage('Run Integration Tests (Testcontainers)') {
+            stage('Run Tests & Verify Coverage') {
                 container('builder') {
                     sh """
-                    ./gradlew check --no-daemon
+                    echo "==> Running integration and unit tests with coverage reporting..."
+                    ./gradlew check jacocoAggregateReport --no-daemon
+
+                    echo "==> Verifying code coverage meets minimum threshold (\${params.MIN_COVERAGE}%)..."
+                    MIN_COV="\${params.MIN_COVERAGE}"
+                    REPORT_CSV="build/reports/jacoco/aggregate/jacoco.csv"
+
+                    if [ ! -f "\${REPORT_CSV}" ]; then
+                      REPORT_FILES=\$(find . -path "*/build/reports/jacoco/*/*.csv" 2>/dev/null || true)
+                    else
+                      REPORT_FILES="\${REPORT_CSV}"
+                    fi
+
+                    if [ -z "\${REPORT_FILES}" ]; then
+                      echo "ERROR: No JaCoCo coverage reports found. Unable to verify coverage threshold."
+                      exit 1
+                    fi
+
+                    awk -F',' -v min_cov="\${MIN_COV}" '
+                      NR > 1 && \$4 ~ /^[0-9]+\$/ {
+                        inst_miss += \$4; inst_cov += \$5;
+                        branch_miss += \$6; branch_cov += \$7;
+                        line_miss += \$8; line_cov += \$9;
+                      }
+                      END {
+                        inst_total = inst_miss + inst_cov;
+                        line_total = line_miss + line_cov;
+                        branch_total = branch_miss + branch_cov;
+
+                        if (line_total == 0 && inst_total == 0) {
+                          print "ERROR: Coverage reports contain 0 lines and 0 instructions.";
+                          exit 1;
+                        }
+
+                        line_pct = (line_total > 0) ? (line_cov / line_total) * 100 : 0;
+                        inst_pct = (inst_total > 0) ? (inst_cov / inst_total) * 100 : 0;
+                        branch_pct = (branch_total > 0) ? (branch_cov / branch_total) * 100 : 0;
+
+                        printf "\\n==========================================================\\n";
+                        printf " JaCoCo Code Coverage Verification Summary\\n";
+                        printf "==========================================================\\n";
+                        printf "  Line Coverage        : %6.2f%% (%d / %d lines)\\n", line_pct, line_cov, line_total;
+                        printf "  Instruction Coverage : %6.2f%% (%d / %d instructions)\\n", inst_pct, inst_cov, inst_total;
+                        if (branch_total > 0) {
+                          printf "  Branch Coverage      : %6.2f%% (%d / %d branches)\\n", branch_pct, branch_cov, branch_total;
+                        }
+                        printf "  Required Threshold   : %6.2f%%\\n", min_cov;
+                        printf "==========================================================\\n\\n";
+
+                        eval_pct = (line_total > 0) ? line_pct : inst_pct;
+                        if (eval_pct < min_cov) {
+                          printf "FAILED: Code coverage (%.2f%%) is below the required threshold of %.2f%%!\\n", eval_pct, min_cov;
+                          exit 1;
+                        } else {
+                          printf "PASSED: Code coverage (%.2f%%) satisfies the required threshold of %.2f%%.\\n\\n", eval_pct, min_cov;
+                        }
+                      }
+                    ' \${REPORT_FILES}
                     """
                 }
             }
         }
 
         if (params.RUN_SONAR) {
-            stage('SonarQube Code Analysis') {
+            stage('SonarQube Code Analysis & Quality Gate') {
                 container('builder') {
                     sh """
                     cat << 'EOF' > init-sonar.gradle
@@ -101,7 +160,9 @@ EOF
                       -Dsonar.token=\${params.SONAR_TOKEN} \
                       -Dsonar.projectName=\${params.IMAGE_NAME} \
                       -Dsonar.projectKey=\${params.IMAGE_NAME} \
-                      --no-daemon || true
+                      -Dsonar.coverage.jacoco.xmlReportPaths=build/reports/jacoco/aggregate/jacoco.xml,**/build/reports/jacoco/test/jacocoTestReport.xml \
+                      -Dsonar.qualitygate.wait=\${params.SONAR_WAIT_QUALITY_GATE} \
+                      --no-daemon
                     """
                 }
             }
