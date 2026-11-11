@@ -7,7 +7,7 @@ properties([
         string(name: 'MIN_COVERAGE', defaultValue: '80', description: 'Minimum required test code coverage percentage (default 80%)'),
         booleanParam(name: 'RUN_SONAR', defaultValue: true, description: 'Run SonarQube code quality scan'),
         string(name: 'SONAR_URL', defaultValue: 'http://sonarqube:9000', description: 'SonarQube Server URL'),
-        string(name: 'SONAR_TOKEN', defaultValue: 'squ_d814b7d57dff2b0b58a939e7b4993f04020f3587', description: 'SonarQube Authentication Token'),
+        string(name: 'SONAR_TOKEN', defaultValue: 'sqa_4394c471fbb13c9ae9dc54d59fec7734feec172c', description: 'SonarQube Authentication Token'),
         booleanParam(name: 'SONAR_WAIT_QUALITY_GATE', defaultValue: true, description: 'Wait for SonarQube Quality Gate and fail build if gate fails'),
         booleanParam(name: 'TRIGGER_ROLLOUT', defaultValue: true, description: 'Trigger immediate rollout on k8s deployment if exists')
     ])
@@ -29,12 +29,14 @@ spec:
         runAsUser: 0
       resources:
         requests:
-          cpu: 500m
+          cpu: 1000m
           memory: 1024Mi
         limits:
-          cpu: 2000m
-          memory: 3072Mi
+          cpu: 3000m
+          memory: 4096Mi
       env:
+        - name: GRADLE_USER_HOME
+          value: /root/.gradle
         - name: DOCKER_HOST
           value: unix:///var/run/docker.sock
         - name: TESTCONTAINERS_RYUK_DISABLED
@@ -46,6 +48,8 @@ spec:
       volumeMounts:
         - name: podman-sock
           mountPath: /var/run/docker.sock
+        - name: gradle-cache
+          mountPath: /root/.gradle
     - name: kaniko
       image: gcr.io/kaniko-project/executor:debug
       command: ['/busybox/cat']
@@ -61,6 +65,9 @@ spec:
     - name: podman-sock
       hostPath:
         path: /run/podman/podman.sock
+    - name: gradle-cache
+      persistentVolumeClaim:
+        claimName: jenkins-gradle-cache
 """
 
 podTemplate(yaml: podYaml) {
@@ -75,10 +82,10 @@ podTemplate(yaml: podYaml) {
                 container('builder') {
                     sh """
                     echo "==> Running integration and unit tests with coverage reporting..."
-                    ./gradlew check jacocoAggregateReport --no-daemon
+                    ./gradlew check jacocoAggregateReport --parallel --build-cache --no-daemon
 
-                    echo "==> Verifying code coverage meets minimum threshold (\${params.MIN_COVERAGE}%)..."
-                    MIN_COV="\${params.MIN_COVERAGE}"
+                    echo "==> Verifying code coverage meets minimum threshold (${params.MIN_COVERAGE}%)..."
+                    MIN_COV="${params.MIN_COVERAGE}"
                     REPORT_CSV="build/reports/jacoco/aggregate/jacoco.csv"
 
                     if [ ! -f "\${REPORT_CSV}" ]; then
@@ -148,7 +155,7 @@ initscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'org.sonarsource.scanner.gradle:sonarqube-gradle-plugin:5.1.0.4882'
+        classpath 'org.sonarsource.scanner.gradle:sonarqube-gradle-plugin:7.5.0.8588'
     }
 }
 allprojects {
@@ -156,13 +163,13 @@ allprojects {
 }
 EOF
                     ./gradlew --init-script init-sonar.gradle sonar \
-                      -Dsonar.host.url=\${params.SONAR_URL} \
-                      -Dsonar.token=\${params.SONAR_TOKEN} \
-                      -Dsonar.projectName=\${params.IMAGE_NAME} \
-                      -Dsonar.projectKey=\${params.IMAGE_NAME} \
+                      -Dsonar.host.url=${params.SONAR_URL} \
+                      -Dsonar.token=${params.SONAR_TOKEN} \
+                      -Dsonar.projectName=${params.IMAGE_NAME} \
+                      -Dsonar.projectKey=${params.IMAGE_NAME} \
                       -Dsonar.coverage.jacoco.xmlReportPaths=build/reports/jacoco/aggregate/jacoco.xml,**/build/reports/jacoco/test/jacocoTestReport.xml \
-                      -Dsonar.qualitygate.wait=\${params.SONAR_WAIT_QUALITY_GATE} \
-                      --no-daemon
+                      -Dsonar.qualitygate.wait=${params.SONAR_WAIT_QUALITY_GATE} \
+                      --parallel --build-cache --no-daemon
                     """
                 }
             }
@@ -174,8 +181,8 @@ EOF
                 /kaniko/executor \
                   --context=dir://. \
                   --dockerfile=Dockerfile \
-                  --destination=k3d-dev-registry:5000/\${params.IMAGE_NAME}:\${BUILD_NUMBER} \
-                  --destination=k3d-dev-registry:5000/\${params.IMAGE_NAME}:latest \
+                  --destination=k3d-dev-registry:5000/${params.IMAGE_NAME}:${env.BUILD_NUMBER} \
+                  --destination=k3d-dev-registry:5000/${params.IMAGE_NAME}:latest \
                   --insecure \
                   --skip-tls-verify
                 """
@@ -184,7 +191,7 @@ EOF
 
         if (params.TRIGGER_ROLLOUT) {
             stage('Update Deployment') {
-                echo "Image k3d-dev-registry:5000/\${params.IMAGE_NAME}:\${BUILD_NUMBER} published to local registry."
+                echo "Image k3d-dev-registry:5000/${params.IMAGE_NAME}:${env.BUILD_NUMBER} published to local registry."
                 echo "ArgoCD / GitOps will detect or can be synced."
             }
         }

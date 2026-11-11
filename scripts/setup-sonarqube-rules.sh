@@ -198,6 +198,22 @@ curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}/api/quality
 
 echo "✓ Quality Gate '${QG_NAME}' is now the default quality gate."
 
+# ---------------------------------------------------------------------------
+# 3. Ensure Jenkins Analysis Token
+# ---------------------------------------------------------------------------
+echo ""
+echo "==> Checking Jenkins SonarQube analysis token..."
+TOKEN_LIST=$(curl -k -s -u "${SONAR_USER}:${SONAR_PASS}" "${SONAR_URL}/api/user_tokens/search")
+TOKEN_EXISTS=$(echo "${TOKEN_LIST}" | jq -r '.userTokens[] | select(.name == "jenkins-pipeline") | .name // empty')
+if [[ -z "${TOKEN_EXISTS}" ]]; then
+  NEW_TOKEN=$(curl -k -s -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}/api/user_tokens/generate" \
+    --data-urlencode "name=jenkins-pipeline" \
+    --data-urlencode "type=GLOBAL_ANALYSIS_TOKEN" | jq -r .token)
+  echo "✓ Created new analysis token for Jenkins: ${NEW_TOKEN}"
+else
+  echo "✓ Analysis token 'jenkins-pipeline' already exists."
+fi
+
 echo ""
 echo "=========================================================="
 echo " SonarQube Java & Kotlin Best Rules and Quality Gate Setup Complete! "
