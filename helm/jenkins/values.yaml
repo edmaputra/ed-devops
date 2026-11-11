@@ -25,6 +25,7 @@ controller:
   overwritePlugins: true
   additionalPlugins:
     - "pipeline-stage-view:2.41"
+    - "junit:latest"
   probes:
     startupProbe:
       failureThreshold: 60

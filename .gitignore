@@ -8,3 +8,4 @@ certs/*.pem
 .idea/
 .vscode/
 certs/*.json
+certs/*.txt
