@@ -24,9 +24,9 @@ graph TD
         Traefik --> Jenkins[Jenkins CI/CD]
         Traefik --> ArgoCD[ArgoCD GitOps]
         Traefik --> SonarQube[SonarQube Quality Gate]
+        Traefik --> OpenObserve[OpenObserve Unified Observability]
         Traefik --> Vault[HashiCorp Vault]
         Traefik --> Consul[HashiCorp Consul]
-        Traefik --> OpenObserve[OpenObserve Telemetry]
         Traefik --> Apps[Applications: Backend & Frontend]
         
         FluentBit[Fluent Bit DaemonSet] -->|Container Logs & Host Metrics| OpenObserve
@@ -50,7 +50,7 @@ graph TD
 | **Code Quality** | SonarQube + 80% coverage Quality Gate | SonarQube + Automated Rule Enforcement | ✅ Implemented |
 | **GitOps CD** | ArgoCD Raw Manifests | ArgoCD + Kustomize Overlays + Image Updater | ⚪ Planned |
 | **Secret Management** | Vault KV-v2 + K8s Auth Injector | Vault Auto-rotation & Dynamic DB Credentials | ✅ Implemented |
-| **Observability** | OpenObserve + Fluent Bit (Cluster Logs & Metrics) | Spring Boot Micrometer Dashboards & Alert Rules | 🟡 In Progress |
+| **Observability** | OpenObserve + Fluent Bit (Cluster Logs & Metrics) | Spring Boot Micrometer Dashboards & Alert Rules | ✅ Implemented |
 | **Storage Lifecycle** | Autonomous Build & Image Cleanup CronJob | Autonomous Cleanup + Metrics Alerting | ✅ Implemented |
 | **Developer Experience** | Healthcheck (`make healthcheck`), Lint (`make lint`), Worktrees (`make worktree`) | One-click local disaster recovery drill | ✅ Implemented |
 
@@ -104,20 +104,22 @@ graph TD
 
 ### Milestone 3: Observability & Telemetry Stack
 **Objective**: Full visibility into cluster resource consumption, application performance, and access logs.
-**Status**: 🟡 **In Progress (Core Platform Deployed; App Dashboards & Alerts Next)**
+**Status**: ✅ **Implemented**
 
 1. **Unified Log & Metric Engine (OpenObserve + Fluent Bit)** (✅ Completed):
-   - Deployed single-binary OpenObserve (`openobserve.localhost`) with persistent storage on k3s local-path.
-   - Deployed Fluent Bit DaemonSet collecting stdout/stderr container logs from all pods across all namespaces (including `ilmiya-backend` and `ilmiya-frontend`).
+   - Deployed single-binary OpenObserve (`openobserve.localhost`) with persistent storage on k3s local-path and zero-warning TLS.
+   - Deployed Fluent Bit DaemonSet collecting stdout/stderr container logs from all pods across all namespaces (`k8s_logs`).
+   - Node and host telemetry collected via `node_exporter_metrics`.
    - Integrated OpenObserve UI into local wildcard TLS ingress (`https://openobserve.localhost`).
-2. **Spring Boot Application Telemetry (`ilmiya-backend`)** (🟡 Next Focus):
-   - Scrape Actuator Micrometer metrics (`/actuator/prometheus`) into OpenObserve.
-   - Monitor JVM Heap usage, Garbage Collection pauses, thread pool saturation, and HikariCP connection pool metrics.
-   - Ingest HTTP request latency percentiles (p50, p95, p99) and response code distributions (2xx, 4xx, 5xx).
-3. **Frontend Telemetry & Web Vitals (`ilmiya-frontend`)** (🟡 Next Focus):
+2. **Spring Boot Application Telemetry (`ilmiya-backend`)** (✅ Completed):
+   - Scrapes Actuator Micrometer metrics (`/actuator/prometheus`) directly into OpenObserve via Fluent Bit.
+   - Monitors JVM Heap usage, Garbage Collection pauses, thread pool saturation, and HikariCP connection pool metrics.
+   - Tracks HTTP request latency percentiles (p50, p95, p99) and response code distributions (2xx, 4xx, 5xx).
+3. **Dashboards & Visualizations** (✅ Completed):
+   - Automated provisioning script (`scripts/setup-openobserve-dashboards.sh`) to seed production-grade dashboards.
+4. **Frontend Telemetry & Web Vitals (`ilmiya-frontend`)** (⚪ Planned):
    - Stream Nginx access logs with structured request attributes (client IP, latency, HTTP method, user agent).
-4. **Dashboards & Alert Thresholds** (⚪ Planned):
-   - Build consolidated OpenObserve dashboards for microservice health.
+5. **Advanced Alert Thresholds & RCA** (⚪ Planned):
    - Configure alert rules (e.g. JVM memory > 85%, HTTP 5xx error spikes, or container CrashLoopBackOff events).
 
 ---

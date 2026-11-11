@@ -38,12 +38,12 @@ daemonSetVolumeMounts:
     mountPath: /etc/machine-id
     readOnly: true
 
-# Pipeline configuration for OpenObserve ingestion (Logs + Metrics)
+# Pipeline configuration for OpenObserve ingestion (Cluster & Container Logs)
 config:
   service: |
     [SERVICE]
         Daemon Off
-        Flush 1
+        Flush 5
         Log_Level info
         Parsers_File /fluent-bit/etc/parsers.conf
         Parsers_File /fluent-bit/etc/conf/custom_parsers.conf
@@ -58,7 +58,7 @@ config:
         Path /var/log/containers/*.log
         multiline.parser docker, cri
         Tag kube.*
-        Mem_Buf_Limit 5MB
+        Mem_Buf_Limit 10MB
         Skip_Long_Lines On
         Refresh_Interval 10
 
@@ -74,7 +74,6 @@ config:
         Port 8080
         Metrics_Path /actuator/prometheus
         Scrape_Interval 15s
-
   filters: |
     [FILTER]
         Name kubernetes
@@ -97,6 +96,7 @@ config:
         HTTP_User admin@example.com
         HTTP_Passwd DevOps_OpenObserve#2026
         compress gzip
+        Retry_Limit 5
 
     [OUTPUT]
         Name prometheus_remote_write
@@ -107,3 +107,4 @@ config:
         HTTP_User admin@example.com
         HTTP_Passwd DevOps_OpenObserve#2026
         add_label cluster dev-cluster
+        Retry_Limit 5
