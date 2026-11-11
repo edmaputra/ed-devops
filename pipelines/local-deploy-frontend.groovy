@@ -1,6 +1,6 @@
 properties([
     parameters([
-        string(name: 'REPO_URL', defaultValue: 'git@github.com:edmaputra/ilmiya-frontend.git', description: 'Git repository URL'),
+        string(name: 'REPO_URL', defaultValue: 'https://github.com/edmaputra/ilmiya-frontend.git', description: 'Git repository URL'),
         string(name: 'BRANCH', defaultValue: 'main', description: 'Git branch or tag to deploy'),
         string(name: 'IMAGE_NAME', defaultValue: 'ilmiya-frontend', description: 'Container image name'),
         string(name: 'API_BASE_URL', defaultValue: 'https://ilmiya.localhost', description: 'API Base URL for Flutter Web'),
@@ -42,9 +42,9 @@ podTemplate(yaml: podYaml) {
                 /kaniko/executor \
                   --context=dir://. \
                   --dockerfile=Dockerfile \
-                  --build-arg=ILMIYA_API_BASE_URL=\${params.API_BASE_URL} \
-                  --destination=k3d-dev-registry:5000/\${params.IMAGE_NAME}:\${BUILD_NUMBER} \
-                  --destination=k3d-dev-registry:5000/\${params.IMAGE_NAME}:latest \
+                  --build-arg=ILMIYA_API_BASE_URL=${params.API_BASE_URL} \
+                  --destination=k3d-dev-registry:5000/${params.IMAGE_NAME}:${env.BUILD_NUMBER} \
+                  --destination=k3d-dev-registry:5000/${params.IMAGE_NAME}:latest \
                   --insecure \
                   --skip-tls-verify
                 """
@@ -53,7 +53,7 @@ podTemplate(yaml: podYaml) {
 
         if (params.TRIGGER_ROLLOUT) {
             stage('Update Deployment') {
-                echo "Image k3d-dev-registry:5000/\${params.IMAGE_NAME}:\${BUILD_NUMBER} published to local registry."
+                echo "Image k3d-dev-registry:5000/${params.IMAGE_NAME}:${env.BUILD_NUMBER} published to local registry."
                 echo "ArgoCD / GitOps will detect or can be synced."
             }
         }

@@ -85,6 +85,7 @@ deploy-ingress:
 
 deploy-jenkins-rbac:
 	kubectl apply -f manifests/jenkins/jenkins-deployer-rbac.yaml
+	kubectl apply -f manifests/jenkins/jenkins-gradle-cache-pvc.yaml
 
 seed-jobs:
 	./scripts/seed-jenkins-jobs.sh
