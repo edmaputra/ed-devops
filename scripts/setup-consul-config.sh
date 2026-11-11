@@ -23,12 +23,14 @@ put_kv "config/application/data" 'management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: always
       probes:
-        enabled: true'
+        enabled: true
+    prometheus:
+      enabled: true'
 
 # 2. Ilmiya Backend configuration (config/ilmiya-backend/data)
 put_kv "config/ilmiya-backend/data" 'logging:

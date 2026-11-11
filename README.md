@@ -52,6 +52,15 @@ make stop
 # Check status of cluster nodes, pods, and ingress
 make status
 
+# Run comprehensive health check across cluster, services, APIs, and DB
+make healthcheck
+
+# Run static analysis and linting (Helm, YAML, Shell scripts, K8s manifests)
+make lint
+
+# Safely create a new git worktree with fetched origin/main
+make worktree BRANCH=feat/my-feature
+
 # Display the dashboard URLs and passwords
 make urls
 

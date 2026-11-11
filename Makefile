@@ -1,10 +1,13 @@
-.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob
+.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree
 
 help:
 	@echo "Available commands:"
 	@echo "  make start               - Start existing k3d cluster and local registry"
 	@echo "  make stop                - Stop running k3d cluster and registry (preserves state)"
 	@echo "  make status              - Show cluster status, pods, and ingress"
+	@echo "  make healthcheck         - Comprehensive verification of cluster, services, APIs & DB"
+	@echo "  make lint                - Static analysis & linting (Helm, YAML, Shell, K8s manifests)"
+	@echo "  make worktree BRANCH=... - Create a new git worktree safely synced from origin/main"
 	@echo "  make urls                - Display all local access URLs and credentials"
 	@echo "  make generate-certs      - Generate local TLS certificates with explicit SANs via mkcert"
 	@echo "  make create-tls-secret   - Create Kubernetes secret with local wildcard TLS cert"
@@ -19,6 +22,7 @@ help:
 	@echo "  make setup-sonarqube-rules - Configure Java/Kotlin quality profiles and 80% coverage quality gate"
 	@echo "  make deploy-openobserve  - Deploy or upgrade OpenObserve via Helm"
 	@echo "  make deploy-fluent-bit   - Deploy or upgrade Fluent Bit log shipper via Helm"
+	@echo "  make setup-openobserve-dashboards - Provision initial OpenObserve metrics & log dashboards"
 	@echo "  make deploy-ingress      - Apply local Ingress configuration"
 	@echo "  make deploy-jenkins-rbac - Apply RBAC for Jenkins dynamic build agents"
 	@echo "  make seed-jobs           - Seed centralized local deployment pipeline jobs into Jenkins"
@@ -91,6 +95,9 @@ deploy-openobserve:
 deploy-fluent-bit:
 	helm upgrade --install fluent-bit fluent/fluent-bit -f helm/fluent-bit/values.yaml --timeout 15m
 
+setup-openobserve-dashboards:
+	./scripts/setup-openobserve-dashboards.sh
+
 deploy-ingress:
 	kubectl apply -f manifests/ingress/local-ingress.yaml
 
@@ -107,7 +114,16 @@ cleanup-storage:
 deploy-cleanup-cronjob:
 	kubectl apply -f manifests/jenkins/jenkins-storage-cleanup-cronjob.yaml
 
-deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit create-tls-secret deploy-ingress seed-jobs deploy-cleanup-cronjob
+healthcheck:
+	./scripts/healthcheck.sh
+
+lint:
+	./scripts/lint.sh
+
+worktree:
+	./scripts/worktree-helper.sh $(BRANCH) $(TARGET_DIR)
+
+deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards create-tls-secret deploy-ingress seed-jobs deploy-cleanup-cronjob
 
 deploy-apps:
 	kubectl apply -f manifests/apps/ilmiya-backend/deployment.yaml

@@ -62,6 +62,18 @@ config:
         Skip_Long_Lines On
         Refresh_Interval 10
 
+    [INPUT]
+        Name node_exporter_metrics
+        Tag node_metrics
+        scrape_interval 15
+
+    [INPUT]
+        Name prometheus_scrape
+        Tag app_metrics_backend
+        Host ilmiya-backend.default.svc.cluster.local
+        Port 8080
+        Metrics_Path /actuator/prometheus
+        Scrape_Interval 15s
   filters: |
     [FILTER]
         Name kubernetes
@@ -84,4 +96,15 @@ config:
         HTTP_User admin@example.com
         HTTP_Passwd DevOps_OpenObserve#2026
         compress gzip
+        Retry_Limit 5
+
+    [OUTPUT]
+        Name prometheus_remote_write
+        Match *_metrics*
+        Host openobserve.default.svc.cluster.local
+        Port 5080
+        URI /api/default/prometheus/api/v1/write
+        HTTP_User admin@example.com
+        HTTP_Passwd DevOps_OpenObserve#2026
+        add_label cluster dev-cluster
         Retry_Limit 5
