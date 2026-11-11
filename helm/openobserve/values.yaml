@@ -31,8 +31,12 @@ resources:
     cpu: "100m"
     memory: "256Mi"
   limits:
-    cpu: "1000m"
-    memory: "1024Mi"
+    cpu: "2000m"
+    memory: "1536Mi"
+
+# Disable aggressive kubelet restart on bursty ingestion
+probes:
+  enabled: false
 
 # Persistent storage on k3s local-path provisioner
 persistence:
