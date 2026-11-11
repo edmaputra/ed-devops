@@ -10,6 +10,7 @@ properties([
         string(name: 'BRANCH', defaultValue: 'main', description: 'Git branch or tag to deploy'),
         string(name: 'IMAGE_NAME', defaultValue: 'ilmiya-frontend', description: 'Container image name'),
         string(name: 'API_BASE_URL', defaultValue: 'https://ilmiya.localhost', description: 'API Base URL for Flutter Web'),
+        booleanParam(name: 'ENABLE_CACHE', defaultValue: true, description: 'Enable Kaniko layer caching in local container registry (k3d-dev-registry:5000/kaniko-cache)'),
         booleanParam(name: 'TRIGGER_ROLLOUT', defaultValue: true, description: 'Trigger immediate rollout on k8s deployment if exists')
     ])
 ])
@@ -44,6 +45,7 @@ podTemplate(yaml: podYaml) {
 
         stage('Build & Push Container (Kaniko)') {
             container('kaniko') {
+                def cacheFlags = params.ENABLE_CACHE ? "--cache=true --cache-copy-layers=true --cache-run-layers=true --cache-repo=k3d-dev-registry:5000/kaniko-cache --cache-ttl=72h --compressed-caching=false" : "--cache=false"
                 sh """
                 /kaniko/executor \
                   --context=dir://. \
@@ -51,6 +53,7 @@ podTemplate(yaml: podYaml) {
                   --build-arg=ILMIYA_API_BASE_URL=${params.API_BASE_URL} \
                   --destination=k3d-dev-registry:5000/${params.IMAGE_NAME}:${env.BUILD_NUMBER} \
                   --destination=k3d-dev-registry:5000/${params.IMAGE_NAME}:latest \
+                  ${cacheFlags} \
                   --insecure \
                   --skip-tls-verify
                 """
