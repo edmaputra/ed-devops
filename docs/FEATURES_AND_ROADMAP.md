@@ -14,6 +14,7 @@ This document outlines the architectural features, current capabilities, and str
 - **Code Quality & Security Governance** (SonarQube with strict 80% coverage quality gates)
 - **Enterprise Secret & Config Management** (HashiCorp Vault with Kubernetes Auth & Consul KV)
 - **Autonomous Resource Maintenance** (Scheduled build discarding, image pruning, and volume cleanup)
+- **Unified Observability & Telemetry** (OpenObserve standalone engine + Fluent Bit DaemonSet log & metric shipper)
 
 ```mermaid
 graph TD
@@ -25,8 +26,10 @@ graph TD
         Traefik --> SonarQube[SonarQube Quality Gate]
         Traefik --> Vault[HashiCorp Vault]
         Traefik --> Consul[HashiCorp Consul]
+        Traefik --> OpenObserve[OpenObserve Telemetry]
         Traefik --> Apps[Applications: Backend & Frontend]
         
+        FluentBit[Fluent Bit DaemonSet] -->|Container Logs & Host Metrics| OpenObserve
         Jenkins -->|Ephemeral Pods| Kaniko[Kaniko Builder]
         Kaniko -->|Push Images| Registry[Local Registry :5000]
         ArgoCD -->|Reconcile State| Apps
@@ -42,73 +45,80 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | **Container Engine** | Rootless Podman 4/5 + k3d | Rootless Podman + k3d | ✅ Implemented |
 | **Ingress & Networking** | Traefik Ingress (Ports 80/443), mkcert TLS | Gateway API / Traefik Ingress | ✅ Implemented |
-| **CI Engine** | Jenkins JCasC + Ephemeral Agent Pods | Jenkins + Shared Library | 🟡 In Progress |
-| **Build Optimization** | Gradle PVC Cache, Kaniko builders | Kaniko Registry Caching, Flutter Pub Cache | 🟡 In Progress |
-| **Code Quality** | SonarQube + 80% coverage Quality Gate | SonarQube + Dynamic Credentials | 🟡 In Progress |
+| **CI Engine** | Jenkins JCasC + Ephemeral Agent Pods | Jenkins + Shared Library | ✅ Implemented |
+| **Build Optimization** | Remote Kaniko Caching, Gradle & Flutter PVC Caches | Distributed Caching | ✅ Implemented |
+| **Code Quality** | SonarQube + 80% coverage Quality Gate | SonarQube + Automated Rule Enforcement | ✅ Implemented |
 | **GitOps CD** | ArgoCD Raw Manifests | ArgoCD + Kustomize Overlays + Image Updater | ⚪ Planned |
-| **Secret Management** | Vault KV-v2 + K8s Auth Injector | Vault Auto-rotation & Dynamic DB Credentials | 🟡 Implemented |
-| **Observability** | None (Kubectl only) | Prometheus / VictoriaMetrics + Grafana + Loki | ⚪ Planned |
+| **Secret Management** | Vault KV-v2 + K8s Auth Injector | Vault Auto-rotation & Dynamic DB Credentials | ✅ Implemented |
+| **Observability** | OpenObserve + Fluent Bit (Cluster Logs & Metrics) | Spring Boot Micrometer Dashboards & Alert Rules | 🟡 In Progress |
 | **Storage Lifecycle** | Autonomous Build & Image Cleanup CronJob | Autonomous Cleanup + Metrics Alerting | ✅ Implemented |
-| **Developer Experience** | Makefile commands (`start`, `stop`, `urls`) | One-click healthcheck, linting, worktree helpers | ⚪ Planned |
+| **Developer Experience** | Healthcheck (`make healthcheck`), Lint (`make lint`), Worktrees (`make worktree`) | One-click local disaster recovery drill | ✅ Implemented |
 
 ---
 
 ## 3. Strategic Improvement Roadmap
 
-### Milestone 1: CI/CD Build Optimization & Performance (Current Focus)
+### Milestone 1: CI/CD Build Optimization & Performance
 **Objective**: Drastically reduce build times, preserve network bandwidth, and provide rich test analytics.
+**Status**: ✅ **Completed**
 
-1. **Kaniko Remote Layer Caching**:
-   - Enable `--cache=true` and `--cache-repo=k3d-dev-registry:5000/kaniko-cache` in Jenkins pipelines.
-   - Cache intermediate Dockerfile layers (e.g. OS dependencies, Flutter SDK, Gradle base image) directly inside the local registry.
-   - Accelerate container build times by 5x to 10x for recurring commits.
-2. **Persistent Volume Caching for Frontend (Flutter Pub Cache)**:
-   - Provide persistent storage for Flutter packages (`/root/.pub-cache`) similar to `jenkins-gradle-cache-pvc`.
-   - Prevent re-downloading Flutter dependencies on every build.
-3. **JUnit Test Report Analytics**:
-   - Integrate `junit` test archiving into backend deployment pipelines.
-   - Expose test execution trends, pass/fail ratios, and failure stack traces directly on the Jenkins dashboard.
-4. **Credential Decoupling**:
-   - Transition hardcoded SonarQube tokens from pipeline parameters to Jenkins Credentials (`sonar-token`) and HashiCorp Vault.
+1. **Kaniko Remote Layer Caching** (✅ Completed):
+   - Enabled `--cache=true` and `--cache-repo=k3d-dev-registry:5000/kaniko-cache` in Jenkins pipelines with `ENABLE_CACHE` toggle.
+   - Cache intermediate Dockerfile layers directly inside the local registry.
+   - Accelerates container build times by 5x to 10x for recurring commits.
+2. **Persistent Volume Caching for Frontend & Backend** (✅ Completed):
+   - Provisioned persistent storage for Flutter packages (`/root/.pub-cache` via `jenkins-flutter-cache-pvc`).
+   - Persistent volume storage configured for Gradle caches (`jenkins-gradle-cache-pvc`).
+   - Eliminates re-downloading Flutter and Gradle dependencies across clean builds.
+3. **JUnit Test Report Analytics** (✅ Completed):
+   - Integrated `junit testResults: '**/build/test-results/test/*.xml'` into backend deployment pipeline.
+   - Exposes test execution trends, pass/fail ratios, and failure stack traces directly on the Jenkins dashboard.
+4. **Credential Decoupling** (✅ Completed):
+   - Automated registration of SonarQube tokens into Jenkins Credentials store (`sonar-token`) via `setup-sonarqube-rules.sh`.
+   - Pipelines bind credentials dynamically via `withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')])`.
 
 ---
 
 ### Milestone 2: Developer Experience (DX) & Quality Assurance
 **Objective**: Enhance developer workflow velocity and provide automated verification.
+**Status**: ✅ **Completed**
 
-1. **Unified Health Check (`make healthcheck`)**:
-   - Provide a comprehensive health verification script that validates:
-     - All Ingress routes and TLS certificates (`*.localhost`)
-     - Jenkins REST API & agent pod spawning
-     - ArgoCD application synchronization status
-     - SonarQube system health
-     - Vault unseal state & Kubernetes auth
+1. **Unified Health Check (`make healthcheck`)** (✅ Completed):
+   - Automated script `scripts/healthcheck.sh` that validates:
+     - Kubernetes cluster and node readiness
+     - Ingress routes and TLS certificates (`*.localhost`)
+     - System APIs: SonarQube (`UP`), Vault (unsealed), Consul (leader elected), OpenObserve (`ok`), Jenkins (HTTP 200), ArgoCD (HTTP 200)
+     - Application Ingress & Spring Boot Actuator status
      - PostgreSQL database ping and user connections
-2. **Automated Worktree Helper (`make worktree BRANCH=<name>`)**:
-   - Prevent stale branches by ensuring `origin/main` is automatically fetched and fast-forwarded before creating isolated worktrees.
-3. **Static Analysis & Linting (`make lint`)**:
-   - Integrate `helm lint` across all platform charts.
-   - Add `kubeconform` / `kube-linter` to validate Kubernetes YAML manifests.
-   - Add `shellcheck` validation for automation scripts in `scripts/`.
+     - Pod health & abnormal restart detection across all namespaces
+2. **Automated Worktree Helper (`make worktree BRANCH=<name>`)** (✅ Completed):
+   - Automated helper `scripts/worktree-helper.sh` ensuring `origin/main` is fetched before branching into isolated worktrees.
+3. **Static Analysis & Linting (`make lint`)** (✅ Completed):
+   - Automated script `scripts/lint.sh` validating:
+     - Shell script syntax across all `scripts/*.sh` (`bash -n`)
+     - Helm chart validation (`helm lint helm/postgres`)
+     - YAML validation across all Helm values and Kubernetes manifests
+     - Kubernetes manifest dry-run validation (`kubectl apply --dry-run=client -R -f manifests/`)
 
 ---
 
 ### Milestone 3: Observability & Telemetry Stack
 **Objective**: Full visibility into cluster resource consumption, application performance, and access logs.
+**Status**: 🟡 **In Progress (Core Platform Deployed; App Dashboards & Alerts Next)**
 
-1. **Lightweight Monitoring (VictoriaMetrics / Prometheus + Grafana)**:
-   - Deploy a single-binary VictoriaMetrics or Prometheus agent to scrape:
-     - Kubelet and node-level CPU / Memory utilization
-     - Traefik ingress throughput and HTTP status code distributions
-     - PostgreSQL database metrics (`postgres-exporter`)
-2. **Spring Boot Application Telemetry**:
-   - Ingest Actuator Micrometer metrics from `ilmiya-backend`:
-     - JVM Heap, Garbage Collection pauses, and thread pools
-     - HikariCP database connection pool metrics
-     - REST API latency percentiles (p50, p95, p99)
-3. **Centralized Log Aggregation (Grafana Loki + Fluentbit)**:
-   - Collect and index container logs across all namespaces.
-   - Correlate log entries with HTTP request traces in Grafana.
+1. **Unified Log & Metric Engine (OpenObserve + Fluent Bit)** (✅ Completed):
+   - Deployed single-binary OpenObserve (`openobserve.localhost`) with persistent storage on k3s local-path.
+   - Deployed Fluent Bit DaemonSet collecting stdout/stderr container logs from all pods across all namespaces (including `ilmiya-backend` and `ilmiya-frontend`).
+   - Integrated OpenObserve UI into local wildcard TLS ingress (`https://openobserve.localhost`).
+2. **Spring Boot Application Telemetry (`ilmiya-backend`)** (🟡 Next Focus):
+   - Scrape Actuator Micrometer metrics (`/actuator/prometheus`) into OpenObserve.
+   - Monitor JVM Heap usage, Garbage Collection pauses, thread pool saturation, and HikariCP connection pool metrics.
+   - Ingest HTTP request latency percentiles (p50, p95, p99) and response code distributions (2xx, 4xx, 5xx).
+3. **Frontend Telemetry & Web Vitals (`ilmiya-frontend`)** (🟡 Next Focus):
+   - Stream Nginx access logs with structured request attributes (client IP, latency, HTTP method, user agent).
+4. **Dashboards & Alert Thresholds** (⚪ Planned):
+   - Build consolidated OpenObserve dashboards for microservice health.
+   - Configure alert rules (e.g. JVM memory > 85%, HTTP 5xx error spikes, or container CrashLoopBackOff events).
 
 ---
 
