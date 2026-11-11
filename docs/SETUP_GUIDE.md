@@ -19,6 +19,7 @@ graph TD
                 Traefik -->|https://jenkins.localhost| Jenkins[Jenkins Controller<br/>Port 8080]
                 Traefik -->|https://argocd.localhost| ArgoCD[ArgoCD Server<br/>Port 80]
                 Traefik -->|https://sonar.localhost| SonarQube[SonarQube Server<br/>Port 9000]
+                Traefik -->|https://openobserve.localhost| OpenObserve[OpenObserve<br/>Port 5080]
                 Traefik -->|https://vault.localhost| Vault[HashiCorp Vault<br/>Port 8200]
                 Traefik -->|https://consul.localhost| Consul[HashiCorp Consul<br/>Port 80]
                 Traefik -->|https://app.localhost| Apps[Deployed Applications]
@@ -166,7 +167,8 @@ mkcert -cert-file certs/local-cert.pem -key-file certs/local-key.pem \
   sonar.localhost \
   sonarqube.localhost \
   ilmiya.localhost \
-  "*.ilmiya.localhost"
+  "*.ilmiya.localhost" \
+  openobserve.localhost
 ```
 
 ---
@@ -506,6 +508,7 @@ spec:
         - argocd.localhost
         - sonar.localhost
         - sonarqube.localhost
+        - openobserve.localhost
       secretName: local-wildcard-tls
   rules:
     - host: vault.localhost
@@ -714,6 +717,7 @@ When deploying microservices to this lab:
 | **Jenkins CI/CD** | HTTPS (443) | `https://jenkins.localhost` | `admin` / `admin123` |
 | **ArgoCD GitOps** | HTTPS (443) | `https://argocd.localhost` | `admin` / `admin123` |
 | **SonarQube** | HTTPS (443) | `https://sonar.localhost` | `admin` / `admin` |
+| **OpenObserve** | HTTPS (443) | `https://openobserve.localhost` | `admin@example.com` / `DevOps_OpenObserve#2026` |
 | **PostgreSQL** | TCP (5432) | `postgres:5432` (k8s) / `localhost:5432` (host) | Superuser: `postgres` / `P0stgr3s_L4b_Adm!n#2026`<br>Ilmiya: `ilmiya_db` / `ilmiya_user` / `Ilm!y4_Db_P@ss2026#Secure`<br>Uwati: `uwati` / `uwati` / `Uwat!_Db_P@ss2026#Secure` |
 | **HashiCorp Vault UI** | HTTPS (443) | `https://vault.localhost/ui/` | Token: `root` |
 | **HashiCorp Consul UI** | HTTPS (443) | `https://consul.localhost/ui/` | No auth required |

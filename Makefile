@@ -1,4 +1,4 @@
-.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob
+.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob
 
 help:
 	@echo "Available commands:"
@@ -17,6 +17,8 @@ help:
 	@echo "  make deploy-argocd       - Deploy or upgrade ArgoCD via Helm"
 	@echo "  make deploy-sonarqube    - Deploy or upgrade SonarQube via Helm"
 	@echo "  make setup-sonarqube-rules - Configure Java/Kotlin quality profiles and 80% coverage quality gate"
+	@echo "  make deploy-openobserve  - Deploy or upgrade OpenObserve via Helm"
+	@echo "  make deploy-fluent-bit   - Deploy or upgrade Fluent Bit log shipper via Helm"
 	@echo "  make deploy-ingress      - Apply local Ingress configuration"
 	@echo "  make deploy-jenkins-rbac - Apply RBAC for Jenkins dynamic build agents"
 	@echo "  make seed-jobs           - Seed centralized local deployment pipeline jobs into Jenkins"
@@ -41,6 +43,7 @@ urls:
 	@echo " Jenkins    : https://jenkins.localhost   (User: admin, Pass: admin123)"
 	@echo " ArgoCD     : https://argocd.localhost    (User: admin, Pass: admin123)"
 	@echo " SonarQube  : https://sonar.localhost     (User: admin, Pass: admin)"
+	@echo " OpenObserve: https://openobserve.localhost (User: admin@example.com, Pass: DevOps_OpenObserve#2026)"
 	@echo " Vault      : https://vault.localhost/ui  (Root Token: root)"
 	@echo " Consul     : https://consul.localhost/ui"
 	@echo " PostgreSQL : postgres:5432 / localhost:5432 (Admin: postgres / P0stgr3s_L4b_Adm!n#2026 | ilmiya_db: ilmiya_user / Ilm!y4_Db_P@ss2026#Secure | uwati: uwati / Uwat!_Db_P@ss2026#Secure)"
@@ -50,7 +53,7 @@ urls:
 generate-certs:
 	mkdir -p certs
 	mkcert -cert-file certs/local-cert.pem -key-file certs/local-key.pem \
-		localhost "*.localhost" vault.localhost consul.localhost jenkins.localhost argocd.localhost sonar.localhost sonarqube.localhost ilmiya.localhost "*.ilmiya.localhost"
+		localhost "*.localhost" vault.localhost consul.localhost jenkins.localhost argocd.localhost sonar.localhost sonarqube.localhost ilmiya.localhost "*.ilmiya.localhost" openobserve.localhost
 
 create-tls-secret:
 	kubectl create secret tls local-wildcard-tls --cert=certs/local-cert.pem --key=certs/local-key.pem --dry-run=client -o yaml | kubectl apply -f -
@@ -82,6 +85,12 @@ deploy-sonarqube:
 setup-sonarqube-rules:
 	./scripts/setup-sonarqube-rules.sh
 
+deploy-openobserve:
+	helm upgrade --install openobserve openobserve/openobserve-standalone -f helm/openobserve/values.yaml --timeout 15m
+
+deploy-fluent-bit:
+	helm upgrade --install fluent-bit fluent/fluent-bit -f helm/fluent-bit/values.yaml --timeout 15m
+
 deploy-ingress:
 	kubectl apply -f manifests/ingress/local-ingress.yaml
 
@@ -98,7 +107,7 @@ cleanup-storage:
 deploy-cleanup-cronjob:
 	kubectl apply -f manifests/jenkins/jenkins-storage-cleanup-cronjob.yaml
 
-deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube setup-sonarqube-rules create-tls-secret deploy-ingress seed-jobs deploy-cleanup-cronjob
+deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit create-tls-secret deploy-ingress seed-jobs deploy-cleanup-cronjob
 
 deploy-apps:
 	kubectl apply -f manifests/apps/ilmiya-backend/deployment.yaml
