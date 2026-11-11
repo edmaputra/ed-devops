@@ -14,6 +14,7 @@ spec:
         - sonar.localhost
         - sonarqube.localhost
         - ilmiya.localhost
+        - openobserve.localhost
       secretName: local-wildcard-tls
   rules:
     - host: vault.localhost
@@ -121,3 +122,13 @@ spec:
                 name: ilmiya-frontend
                 port:
                   number: 80
+    - host: openobserve.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: openobserve
+                port:
+                  number: 5080

@@ -1,4 +1,4 @@
-# Local DevOps Lab (k3d + Jenkins + ArgoCD + SonarQube + Vault + Consul + PostgreSQL)
+# Local DevOps Lab (k3d + Jenkins + ArgoCD + SonarQube + Vault + Consul + PostgreSQL + OpenObserve)
 
 This repository sets up a complete, rootless-compatible local Kubernetes DevOps platform containing:
 - **k3d (k3s in Docker/Podman)** with built-in Traefik Ingress Controller
@@ -6,6 +6,7 @@ This repository sets up a complete, rootless-compatible local Kubernetes DevOps 
 - **Jenkins CI/CD** with dynamic Kubernetes Pod agents and Kaniko builders
 - **ArgoCD GitOps CD** for declarative Kubernetes deployment and drift reconciliation
 - **SonarQube** for automated code quality, security analysis, and Quality Gate enforcement
+- **OpenObserve** for cloud-native unified observability (logs, metrics, traces, and dashboards)
 - **PostgreSQL Latest** database service with automatic application user/database initialization
 - **HashiCorp Vault** (with Vault Agent Injector for secret injection)
 - **HashiCorp Consul** (Service discovery & mesh)
@@ -22,6 +23,7 @@ All services run on **standard ports (80 / 443)** with **valid local TLS certifi
 | **Jenkins CI/CD** | [https://jenkins.localhost](https://jenkins.localhost) | User: `admin` <br> Password: `admin123` |
 | **ArgoCD GitOps** | [https://argocd.localhost](https://argocd.localhost) | User: `admin` <br> Password: `admin123` |
 | **SonarQube** | [https://sonar.localhost](https://sonar.localhost) | User: `admin` <br> Password: `admin` |
+| **OpenObserve** | [https://openobserve.localhost](https://openobserve.localhost) | User: `admin@example.com` <br> Password: `DevOps_OpenObserve#2026` |
 | **PostgreSQL** | `postgres:5432` (k8s) <br> `localhost:5432` (host) | Superuser: `postgres` / `P0stgr3s_L4b_Adm!n#2026`<br>Ilmiya DB: `ilmiya_db` / `ilmiya_user` / `Ilm!y4_Db_P@ss2026#Secure`<br>Uwati DB: `uwati` / `uwati` / `Uwat!_Db_P@ss2026#Secure` |
 | **HashiCorp Vault** | [https://vault.localhost/ui](https://vault.localhost/ui) | Method: `Token` <br> Token: `root` |
 | **HashiCorp Consul** | [https://consul.localhost/ui](https://consul.localhost/ui) | Service Discovery & Key-Value |
@@ -64,6 +66,12 @@ make deploy-argocd
 
 # Deploy or upgrade SonarQube
 make deploy-sonarqube
+
+# Deploy or upgrade OpenObserve
+make deploy-openobserve
+
+# Deploy or upgrade Fluent Bit log shipper
+make deploy-fluent-bit
 
 # Configure SonarQube best-practice Java/Kotlin profiles & 80% coverage Quality Gate
 make setup-sonarqube-rules

@@ -1,0 +1,54 @@
+fullnameOverride: "openobserve"
+
+image:
+  oss:
+    repository: k3d-dev-registry:5000/openobserve
+    tag: "latest"
+  busybox:
+    repository: k3d-dev-registry:5000/busybox
+    tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Root user authentication (OpenObserve requires valid RFC TLD email: e.g. .com, .local)
+auth:
+  ZO_ROOT_USER_EMAIL: "admin@example.com"
+  ZO_ROOT_USER_PASSWORD: "DevOps_OpenObserve#2026"
+
+# OpenObserve standalone configuration
+config:
+  ZO_LOCAL_MODE: "true"
+  ZO_LOCAL_MODE_STORAGE: "disk"
+  ZO_HTTP_PORT: "5080"
+  ZO_GRPC_PORT: "5081"
+  ZO_UI_ENABLED: "true"
+  ZO_TELEMETRY: "false"
+  ZO_PROMETHEUS_ENABLED: "true"
+  ZO_COMPACT_DOWNSAMPLING_INTERVAL: "3600"
+
+# Resource tuning for local development lab (~300MB RAM typical usage)
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1024Mi"
+
+# Persistent storage on k3s local-path provisioner
+persistence:
+  enabled: true
+  size: 5Gi
+  storageClass: "local-path"
+  accessModes:
+    - ReadWriteOnce
+  volumePermissions:
+    enabled: true
+
+service:
+  type: ClusterIP
+  http_port: 5080
+  grpc_port: 5081
+
+# Ingress is managed centrally via manifests/ingress/local-ingress.yaml
+ingress:
+  enabled: false
