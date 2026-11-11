@@ -31,10 +31,10 @@ All services run on **standard ports (80 / 443)** with **valid local TLS certifi
 
 ---
 
-## Architecture & Setup Guide
+## Architecture, Features & Roadmap
 
-For a comprehensive step-by-step installation, rootless cgroup delegation, sysctl port binding, and browser NSS trust store configuration, see:
 - [Complete Environment Setup Guide](docs/SETUP_GUIDE.md)
+- [Features and Strategic Roadmap](docs/FEATURES_AND_ROADMAP.md)
 
 ---
 

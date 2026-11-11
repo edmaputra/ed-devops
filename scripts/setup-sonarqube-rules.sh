@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 SONAR_URL="${SONAR_URL:-https://sonar.localhost}"
 SONAR_USER="${SONAR_USER:-admin}"
 SONAR_PASS="${SONAR_PASS:-admin}"
@@ -199,19 +202,61 @@ curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}/api/quality
 echo "✓ Quality Gate '${QG_NAME}' is now the default quality gate."
 
 # ---------------------------------------------------------------------------
-# 3. Ensure Jenkins Analysis Token
+# 3. Ensure Jenkins Analysis Token & Seed into Jenkins Credentials
 # ---------------------------------------------------------------------------
 echo ""
 echo "==> Checking Jenkins SonarQube analysis token..."
-TOKEN_LIST=$(curl -k -s -u "${SONAR_USER}:${SONAR_PASS}" "${SONAR_URL}/api/user_tokens/search")
-TOKEN_EXISTS=$(echo "${TOKEN_LIST}" | jq -r '.userTokens[] | select(.name == "jenkins-pipeline") | .name // empty')
+TOKEN_FILE="${ROOT_DIR:-.}/certs/sonar-token.txt"
+TOKEN_TO_SYNC=""
+
+TOKEN_LIST=$(curl -k -s -u "${SONAR_USER}:${SONAR_PASS}" "${SONAR_URL}/api/user_tokens/search" || echo "{}")
+TOKEN_EXISTS=$(echo "${TOKEN_LIST}" | jq -r '.userTokens[] | select(.name == "jenkins-pipeline") | .name // empty' 2>/dev/null || true)
+
 if [[ -z "${TOKEN_EXISTS}" ]]; then
   NEW_TOKEN=$(curl -k -s -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}/api/user_tokens/generate" \
     --data-urlencode "name=jenkins-pipeline" \
     --data-urlencode "type=GLOBAL_ANALYSIS_TOKEN" | jq -r .token)
   echo "✓ Created new analysis token for Jenkins: ${NEW_TOKEN}"
+  mkdir -p "$(dirname "${TOKEN_FILE}")"
+  echo "${NEW_TOKEN}" > "${TOKEN_FILE}"
+  chmod 600 "${TOKEN_FILE}"
+  TOKEN_TO_SYNC="${NEW_TOKEN}"
 else
-  echo "✓ Analysis token 'jenkins-pipeline' already exists."
+  echo "✓ Analysis token 'jenkins-pipeline' already exists in SonarQube."
+  if [[ -f "${TOKEN_FILE}" ]]; then
+    TOKEN_TO_SYNC=$(cat "${TOKEN_FILE}")
+  fi
+fi
+
+# Seed into Jenkins credentials store if Jenkins is available and token is known
+JENKINS_URL="${JENKINS_URL:-https://jenkins.localhost}"
+JENKINS_USER="${JENKINS_USER:-admin}"
+JENKINS_PASS="${JENKINS_PASS:-admin123}"
+
+if [[ -n "${TOKEN_TO_SYNC}" ]] && curl -k -s -f -u "${JENKINS_USER}:${JENKINS_PASS}" "${JENKINS_URL}/api/json" > /dev/null 2>&1; then
+  echo "==> Syncing SonarQube token to Jenkins credentials store ('sonar-token')..."
+  COOKIE_JAR=$(mktemp)
+  trap 'rm -f "${COOKIE_JAR}"' EXIT
+
+  CRUMB_JSON=$(curl -k -s -c "${COOKIE_JAR}" -u "${JENKINS_USER}:${JENKINS_PASS}" "${JENKINS_URL}/crumbIssuer/api/json" || echo "{}")
+  CRUMB=$(echo "${CRUMB_JSON}" | jq -r '.crumb // empty')
+  CRUMB_FIELD=$(echo "${CRUMB_JSON}" | jq -r '.crumbRequestField // empty')
+
+  CRUMB_HEADER=()
+  if [[ -n "${CRUMB}" && -n "${CRUMB_FIELD}" ]]; then
+    CRUMB_HEADER=(-H "${CRUMB_FIELD}: ${CRUMB}")
+  fi
+
+  # Check if credential already exists; delete before re-adding to update cleanly
+  curl -k -s -b "${COOKIE_JAR}" -u "${JENKINS_USER}:${JENKINS_PASS}" "${CRUMB_HEADER[@]}" \
+    -X POST "${JENKINS_URL}/credentials/store/system/domain/_/credential/sonar-token/doDelete" > /dev/null 2>&1 || true
+
+  curl -k -s -f -b "${COOKIE_JAR}" -u "${JENKINS_USER}:${JENKINS_PASS}" "${CRUMB_HEADER[@]}" \
+    -X POST "${JENKINS_URL}/credentials/store/system/domain/_/createCredentials" \
+    -H "Content-Type: application/xml" \
+    -d "<org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl plugin=\"plain-credentials\"><scope>GLOBAL</scope><id>sonar-token</id><description>SonarQube Analysis Token</description><secret>${TOKEN_TO_SYNC}</secret></org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl>" > /dev/null 2>&1 || true
+
+  echo "✓ Jenkins credential 'sonar-token' registered successfully."
 fi
 
 echo ""
