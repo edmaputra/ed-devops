@@ -14,7 +14,7 @@ properties([
         booleanParam(name: 'RUN_SONAR', defaultValue: true, description: 'Run SonarQube code quality scan'),
         string(name: 'SONAR_URL', defaultValue: 'http://sonarqube:9000', description: 'SonarQube Server URL'),
         string(name: 'SONAR_CREDENTIALS_ID', defaultValue: 'sonar-token', description: 'Jenkins credentials ID for SonarQube analysis token'),
-        string(name: 'SONAR_TOKEN', defaultValue: '', description: 'SonarQube Authentication Token (fallback if credentials ID not present)'),
+        string(name: 'SONAR_TOKEN', defaultValue: 'sqa_4394c471fbb13c9ae9dc54d59fec7734feec172c', description: 'SonarQube Authentication Token (fallback if credentials ID not present)'),
         booleanParam(name: 'SONAR_WAIT_QUALITY_GATE', defaultValue: true, description: 'Wait for SonarQube Quality Gate and fail build if gate fails'),
         booleanParam(name: 'ENABLE_CACHE', defaultValue: true, description: 'Enable Kaniko layer caching in local container registry (k3d-dev-registry:5000/kaniko-cache)'),
         booleanParam(name: 'TRIGGER_ROLLOUT', defaultValue: true, description: 'Trigger immediate rollout on k8s deployment if exists')
