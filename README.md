@@ -68,8 +68,14 @@ make deploy-sonarqube
 # Configure SonarQube best-practice Java/Kotlin profiles & 80% coverage Quality Gate
 make setup-sonarqube-rules
 
-# Seed centralized local deployment pipeline jobs into Jenkins (Tests, Coverage >= 80%, and SonarQube enabled by default)
+# Seed centralized local deployment pipeline jobs into Jenkins (Tests, Coverage >= 80%, SonarQube, and Storage Cleanup)
 make seed-jobs
+
+# Prune older Jenkins builds, dangling/unused container images, and volumes
+make cleanup-storage
+
+# Deploy scheduled autonomous storage cleanup CronJob to Kubernetes
+make deploy-cleanup-cronjob
 
 # Re-deploy all platform services, TLS, and Ingress
 make deploy-all
@@ -80,3 +86,28 @@ make cluster-down
 # Re-create cluster & registry from scratch
 make cluster-up
 ```
+
+---
+
+## Autonomous Storage & Build Cleanup Mechanism
+
+To prevent disk saturation and continuously reclaim storage, the platform includes a multi-layered autonomous cleanup architecture:
+
+1. **Job-Level Build Discarder (`logRotator`)**:
+   - `deploy-ilmiya-backend` and `deploy-ilmiya-frontend` pipelines are configured with `buildDiscarder` to automatically retain only the **10 most recent builds** (max age **2 days**, max **5 artifact runs**).
+
+2. **Jenkins Global Build Discarder (JCasC)**:
+   - Configured in [helm/jenkins/values.yaml](file:///home/edmaputra/.gemini/antigravity/worktrees/ed-devops/jenkins_storage_cleanup/helm/jenkins/values.yaml) via Jenkins Configuration as Code (`SimpleGlobalBuildDiscarderStrategy`), enforcing a global safety limit on all jobs.
+
+3. **Scheduled Jenkins Maintenance Pipeline (`system-storage-cleanup`)**:
+   - Seeded automatically via `make seed-jobs` from [pipelines/autonomous-storage-cleanup.groovy](file:///home/edmaputra/.gemini/antigravity/worktrees/ed-devops/jenkins_storage_cleanup/pipelines/autonomous-storage-cleanup.groovy).
+   - Runs automatically on a daily cron schedule (`H 2 * * *`) or manually with parameter overrides (`MAX_BUILDS_TO_KEEP`, `DAYS_TO_KEEP`, `IMAGE_RETENTION_HOURS`, etc.).
+   - Prunes build records across all jobs and connects to the container engine socket to prune dangling images, unreferenced images older than 72 hours, stopped containers, and unattached volumes.
+
+4. **Kubernetes Scheduled CronJob (`jenkins-storage-cleanup`)**:
+   - Declared in [manifests/jenkins/jenkins-storage-cleanup-cronjob.yaml](file:///home/edmaputra/.gemini/antigravity/worktrees/ed-devops/jenkins_storage_cleanup/manifests/jenkins/jenkins-storage-cleanup-cronjob.yaml) and deployed via `make deploy-cleanup-cronjob`.
+   - Runs autonomously in the cluster daily at `02:00 UTC` without requiring external triggers.
+
+5. **Manual CLI Execution (`make cleanup-storage`)**:
+   - Run [scripts/cleanup-storage.sh](file:///home/edmaputra/.gemini/antigravity/worktrees/ed-devops/jenkins_storage_cleanup/scripts/cleanup-storage.sh) anytime via `make cleanup-storage` to instantly prune builds, Podman images, volumes, and k3d CRI containerd cache.
+

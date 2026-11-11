@@ -1,4 +1,10 @@
 properties([
+    buildDiscarder(logRotator(
+        daysToKeepStr: '2',
+        numToKeepStr: '10',
+        artifactDaysToKeepStr: '2',
+        artifactNumToKeepStr: '5'
+    )),
     parameters([
         string(name: 'REPO_URL', defaultValue: 'git@github.com:edmaputra/ilmiya.git', description: 'Git repository URL'),
         string(name: 'BRANCH', defaultValue: 'main', description: 'Git branch or tag to deploy'),

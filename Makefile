@@ -1,4 +1,4 @@
-.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret
+.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob
 
 help:
 	@echo "Available commands:"
@@ -20,6 +20,8 @@ help:
 	@echo "  make deploy-ingress      - Apply local Ingress configuration"
 	@echo "  make deploy-jenkins-rbac - Apply RBAC for Jenkins dynamic build agents"
 	@echo "  make seed-jobs           - Seed centralized local deployment pipeline jobs into Jenkins"
+	@echo "  make cleanup-storage     - Prune older Jenkins builds, dangling/unused images & volumes"
+	@echo "  make deploy-cleanup-cronjob - Deploy scheduled autonomous storage cleanup CronJob to k8s"
 	@echo "  make deploy-all          - Deploy all platform services, TLS, and ingress"
 	@echo "  make cluster-up          - Create k3d cluster with local registry"
 	@echo "  make cluster-down        - Destroy k3d cluster and registry"
@@ -90,7 +92,13 @@ deploy-jenkins-rbac:
 seed-jobs:
 	./scripts/seed-jenkins-jobs.sh
 
-deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube setup-sonarqube-rules create-tls-secret deploy-ingress seed-jobs
+cleanup-storage:
+	./scripts/cleanup-storage.sh
+
+deploy-cleanup-cronjob:
+	kubectl apply -f manifests/jenkins/jenkins-storage-cleanup-cronjob.yaml
+
+deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube setup-sonarqube-rules create-tls-secret deploy-ingress seed-jobs deploy-cleanup-cronjob
 
 deploy-apps:
 	kubectl apply -f manifests/apps/ilmiya-backend/deployment.yaml

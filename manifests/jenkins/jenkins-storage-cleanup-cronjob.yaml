@@ -1,0 +1,138 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: jenkins-storage-cleanup
+  namespace: default
+  labels:
+    app.kubernetes.io/name: jenkins-storage-cleanup
+    app.kubernetes.io/part-of: platform-tooling
+spec:
+  schedule: "0 2 * * *"  # Runs daily at 02:00 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: jenkins-storage-cleanup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: storage-cleaner
+              image: docker.io/curlimages/curl:8.23.0
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsUser: 0
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              env:
+                - name: JENKINS_URL
+                  value: "http://jenkins.default.svc.cluster.local:8080"
+                - name: JENKINS_USER
+                  value: "admin"
+                - name: JENKINS_PASS
+                  value: "admin123"
+                - name: MAX_BUILDS_TO_KEEP
+                  value: "10"
+                - name: DAYS_TO_KEEP
+                  value: "2"
+              volumeMounts:
+                - name: podman-sock
+                  mountPath: /var/run/docker.sock
+              command:
+                - "/bin/sh"
+                - "-c"
+                - |
+                  set -e
+                  echo "=================================================================="
+                  echo " Starting Scheduled Autonomous Kubernetes Storage Cleaner"
+                  echo " Date: $(date)"
+                  echo "=================================================================="
+
+                  # 1. Prune Jenkins Old Builds via internal cluster API
+                  COOKIE_JAR=$(mktemp)
+                  trap 'rm -f "${COOKIE_JAR}"' EXIT
+
+                  echo "==> [1/3] Triggering Jenkins build retention cleanup..."
+                  CRUMB_JSON=$(curl -s -c "${COOKIE_JAR}" -u "${JENKINS_USER}:${JENKINS_PASS}" "${JENKINS_URL}/crumbIssuer/api/json" || echo "{}")
+                  CRUMB=$(echo "${CRUMB_JSON}" | sed -n 's/.*"crumb":"\([^"]*\)".*/\1/p')
+                  CRUMB_FIELD=$(echo "${CRUMB_JSON}" | sed -n 's/.*"crumbRequestField":"\([^"]*\)".*/\1/p')
+
+                  CRUMB_HEADER=""
+                  if [ -n "${CRUMB}" ] && [ -n "${CRUMB_FIELD}" ]; then
+                    CRUMB_HEADER="-H ${CRUMB_FIELD}:${CRUMB}"
+                  fi
+
+                  GROOVY_SCRIPT="
+                  int maxKeep = Integer.parseInt('${MAX_BUILDS_TO_KEEP}')
+                  int daysKeep = Integer.parseInt('${DAYS_TO_KEEP}')
+                  long now = System.currentTimeMillis()
+                  long maxAgeMs = daysKeep * 24L * 60L * 60L * 1000L
+
+                  int totalDeleted = 0
+                  jenkins.model.Jenkins.get().getAllItems(hudson.model.Job.class).each { job ->
+                      def builds = job.getBuilds()
+                      int kept = 0
+                      int jobDeleted = 0
+                      builds.each { build ->
+                          boolean shouldDelete = false
+                          if (kept >= maxKeep) {
+                              shouldDelete = true
+                          } else if (daysKeep > 0 && (now - build.getTimeInMillis()) > maxAgeMs) {
+                              shouldDelete = true
+                          }
+                          if (shouldDelete) {
+                              try {
+                                  println '[PRUNED] ' + job.name + ' #' + build.number
+                                  build.delete()
+                                  jobDeleted++
+                                  totalDeleted++
+                              } catch (Exception e) {
+                                  println '[ERROR] ' + e.message
+                              }
+                          } else {
+                              kept++
+                          }
+                      }
+                      println '--> Job ' + job.name + ': pruned ' + jobDeleted + ', kept ' + kept
+                  }
+                  println 'TOTAL_BUILDS_PRUNED=' + totalDeleted
+                  "
+
+                  curl -s -X POST -b "${COOKIE_JAR}" \
+                    -u "${JENKINS_USER}:${JENKINS_PASS}" \
+                    ${CRUMB_HEADER} \
+                    --data-urlencode "script=${GROOVY_SCRIPT}" \
+                    "${JENKINS_URL}/scriptText" || echo "WARNING: Jenkins scriptText call failed or timed out."
+
+                  # 2. Prune Container Engine Images & Volumes
+                  if [ -S /var/run/docker.sock ]; then
+                    echo ""
+                    echo "==> [2/3] Pruning dangling and unused container images via socket..."
+                    curl -s -X POST --unix-socket /var/run/docker.sock "http://localhost/v1.41/images/prune?filters=%7B%22dangling%22%3A%5B%22true%22%5D%7D"
+
+                    echo ""
+                    echo "==> [3/3] Pruning orphaned storage volumes via socket..."
+                    curl -s -X POST --unix-socket /var/run/docker.sock "http://localhost/v1.41/volumes/prune"
+
+                    echo ""
+                    echo "-> Pruning stopped containers..."
+                    curl -s -X POST --unix-socket /var/run/docker.sock "http://localhost/v1.41/containers/prune"
+                  else
+                    echo "WARNING: Docker/Podman socket not mounted. Skipping container prune."
+                  fi
+
+                  echo ""
+                  echo "Autonomous cleanup run complete."
+          volumes:
+            - name: podman-sock
+              hostPath:
+                path: /run/podman/podman.sock

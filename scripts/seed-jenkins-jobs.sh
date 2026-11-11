@@ -97,6 +97,7 @@ XML
 # Deploy local deployment pipeline jobs
 deploy_job "deploy-ilmiya-backend" "${ROOT_DIR}/pipelines/local-deploy-backend.groovy" "Centralized Local Deployment for Java Spring Boot Backend"
 deploy_job "deploy-ilmiya-frontend" "${ROOT_DIR}/pipelines/local-deploy-frontend.groovy" "Centralized Local Deployment for Flutter Web Frontend"
+deploy_job "system-storage-cleanup" "${ROOT_DIR}/pipelines/autonomous-storage-cleanup.groovy" "Autonomous Scheduled Cleanup for Jenkins Builds, Container Images, and Volumes"
 
 echo ""
 echo "All local pipeline jobs successfully seeded in Jenkins!"
