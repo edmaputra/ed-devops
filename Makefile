@@ -1,4 +1,4 @@
-.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree
+.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree
 
 help:
 	@echo "Available commands:"
@@ -22,6 +22,7 @@ help:
 	@echo "  make setup-sonarqube-rules - Configure Java/Kotlin quality profiles and 80% coverage quality gate"
 	@echo "  make deploy-openobserve  - Deploy or upgrade OpenObserve via Helm"
 	@echo "  make deploy-fluent-bit   - Deploy or upgrade Fluent Bit log shipper via Helm"
+	@echo "  make setup-openobserve-dashboards - Provision initial OpenObserve metrics & log dashboards"
 	@echo "  make deploy-ingress      - Apply local Ingress configuration"
 	@echo "  make deploy-jenkins-rbac - Apply RBAC for Jenkins dynamic build agents"
 	@echo "  make seed-jobs           - Seed centralized local deployment pipeline jobs into Jenkins"
@@ -94,6 +95,9 @@ deploy-openobserve:
 deploy-fluent-bit:
 	helm upgrade --install fluent-bit fluent/fluent-bit -f helm/fluent-bit/values.yaml --timeout 15m
 
+setup-openobserve-dashboards:
+	./scripts/setup-openobserve-dashboards.sh
+
 deploy-ingress:
 	kubectl apply -f manifests/ingress/local-ingress.yaml
 
@@ -119,7 +123,7 @@ lint:
 worktree:
 	./scripts/worktree-helper.sh $(BRANCH) $(TARGET_DIR)
 
-deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit create-tls-secret deploy-ingress seed-jobs deploy-cleanup-cronjob
+deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards create-tls-secret deploy-ingress seed-jobs deploy-cleanup-cronjob
 
 deploy-apps:
 	kubectl apply -f manifests/apps/ilmiya-backend/deployment.yaml

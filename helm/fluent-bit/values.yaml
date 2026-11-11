@@ -67,6 +67,14 @@ config:
         Tag node_metrics
         scrape_interval 15
 
+    [INPUT]
+        Name prometheus_scrape
+        Tag app_metrics_backend
+        Host ilmiya-backend.default.svc.cluster.local
+        Port 8080
+        Metrics_Path /actuator/prometheus
+        Scrape_Interval 15s
+
   filters: |
     [FILTER]
         Name kubernetes
@@ -92,7 +100,7 @@ config:
 
     [OUTPUT]
         Name prometheus_remote_write
-        Match node_metrics
+        Match *_metrics*
         Host openobserve.default.svc.cluster.local
         Port 5080
         URI /api/default/prometheus/api/v1/write
