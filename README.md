@@ -94,7 +94,7 @@ make cluster-up
 To prevent disk saturation and continuously reclaim storage, the platform includes a multi-layered autonomous cleanup architecture:
 
 1. **Job-Level Build Discarder (`logRotator`)**:
-   - `deploy-ilmiya-backend` and `deploy-ilmiya-frontend` pipelines are configured with `buildDiscarder` to automatically retain only the **10 most recent builds** (max age **7 days**, max **5 artifact runs**).
+   - `deploy-ilmiya-backend` and `deploy-ilmiya-frontend` pipelines are configured with `buildDiscarder` to automatically retain only the **10 most recent builds** (max age **2 days**, max **5 artifact runs**).
 
 2. **Jenkins Global Build Discarder (JCasC)**:
    - Configured in [helm/jenkins/values.yaml](file:///home/edmaputra/.gemini/antigravity/worktrees/ed-devops/jenkins_storage_cleanup/helm/jenkins/values.yaml) via Jenkins Configuration as Code (`SimpleGlobalBuildDiscarderStrategy`), enforcing a global safety limit on all jobs.

@@ -1,8 +1,8 @@
 properties([
     buildDiscarder(logRotator(
-        daysToKeepStr: '14',
+        daysToKeepStr: '2',
         numToKeepStr: '15',
-        artifactDaysToKeepStr: '14',
+        artifactDaysToKeepStr: '2',
         artifactNumToKeepStr: '5'
     )),
     pipelineTriggers([
@@ -10,7 +10,7 @@ properties([
     ]),
     parameters([
         string(name: 'MAX_BUILDS_TO_KEEP', defaultValue: '10', description: 'Maximum number of recent builds to retain per job'),
-        string(name: 'DAYS_TO_KEEP', defaultValue: '7', description: 'Maximum age in days for build retention (0 disables age limit)'),
+        string(name: 'DAYS_TO_KEEP', defaultValue: '2', description: 'Maximum age in days for build retention (0 disables age limit)'),
         booleanParam(name: 'PRUNE_CONTAINER_IMAGES', defaultValue: true, description: 'Prune unused and dangling container images from storage'),
         string(name: 'IMAGE_RETENTION_HOURS', defaultValue: '72h', description: 'Filter images older than this duration (e.g. 24h, 72h, or empty for all unreferenced)'),
         booleanParam(name: 'PRUNE_CONTAINER_VOLUMES', defaultValue: true, description: 'Prune dangling/unused container storage volumes'),

@@ -43,7 +43,7 @@ spec:
                 - name: MAX_BUILDS_TO_KEEP
                   value: "10"
                 - name: DAYS_TO_KEEP
-                  value: "7"
+                  value: "2"
               volumeMounts:
                 - name: podman-sock
                   mountPath: /var/run/docker.sock

@@ -1,8 +1,8 @@
 properties([
     buildDiscarder(logRotator(
-        daysToKeepStr: '7',
+        daysToKeepStr: '2',
         numToKeepStr: '10',
-        artifactDaysToKeepStr: '7',
+        artifactDaysToKeepStr: '2',
         artifactNumToKeepStr: '5'
     )),
     parameters([
