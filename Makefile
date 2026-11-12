@@ -1,4 +1,4 @@
-.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
+.PHONY: help status start stop cluster-up cluster-down seed-images deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
 
 # ---------------------------------------------------------------------------
 # Detect OS and set the correct k3d config and container socket.
@@ -48,6 +48,7 @@ help:
 	@echo "  make deploy-cleanup-cronjob - Deploy scheduled autonomous storage cleanup CronJob to k8s"
 	@echo "  make deploy-all          - Deploy all platform services, TLS, and ingress"
 	@echo "  make cluster-up          - Create k3d cluster with local registry"
+	@echo "  make seed-images         - Pull upstream images and push them to the local registry"
 	@echo "  make cluster-down        - Destroy k3d cluster and registry"
 
 setup-macos:
@@ -196,6 +197,25 @@ else
 	k3d registry create --default-network podman dev-registry --port 0.0.0.0:5000 || true
 endif
 	k3d cluster create --config $(K3D_CONFIG)
+	$(MAKE) seed-images
+
+seed-images:
+	@echo "=== Seeding required images into local registry ==="
+	@echo "--- Fluent Bit ---"
+	docker pull cr.fluentbit.io/fluent/fluent-bit:3.2
+	docker tag  cr.fluentbit.io/fluent/fluent-bit:3.2 localhost:5000/fluent-bit:latest
+	docker push localhost:5000/fluent-bit:latest
+
+	@echo "--- OpenObserve ---"
+	docker pull public.ecr.aws/zinclabs/openobserve:latest
+	docker tag  public.ecr.aws/zinclabs/openobserve:latest localhost:5000/openobserve:latest
+	docker push localhost:5000/openobserve:latest
+
+	@echo "--- BusyBox ---"
+	docker pull busybox:1.36
+	docker tag  busybox:1.36 localhost:5000/busybox:latest
+	docker push localhost:5000/busybox:latest
+	@echo "=== Image seeding complete ==="
 
 cluster-down:
 	k3d cluster delete dev-cluster || true
