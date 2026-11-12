@@ -1,0 +1,29 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: dev-cluster
+servers: 1
+agents: 0
+kubeAPI:
+  hostPort: "6443"
+ports:
+  - port: 80:80
+    nodeFilters:
+      - loadbalancer
+  - port: 443:443
+    nodeFilters:
+      - loadbalancer
+  - port: 5432:5432
+    nodeFilters:
+      - loadbalancer
+registries:
+  use:
+    - k3d-dev-registry:5000
+# macOS / OrbStack: no Podman socket to mount — Docker socket is managed
+# by OrbStack's VM and is not accessible as a host path inside k3d nodes.
+# Jenkins agents use docker:dind sidecar instead (see helm/jenkins/values.yaml).
+options:
+  k3s:
+    extraArgs:
+      # KubeletInUserNamespace is Linux-rootless-only; not needed under OrbStack.
+      []
