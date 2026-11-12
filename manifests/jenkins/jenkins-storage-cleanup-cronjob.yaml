@@ -135,4 +135,6 @@ spec:
           volumes:
             - name: podman-sock
               hostPath:
+                # Linux (Rootless Podman): /run/podman/podman.sock
+                # macOS (OrbStack):        /var/run/docker.sock  → set via deploy-cleanup-cronjob target
                 path: /run/podman/podman.sock

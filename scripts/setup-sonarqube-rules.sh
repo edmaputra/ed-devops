@@ -12,7 +12,19 @@ echo "==> Waiting for SonarQube at ${SONAR_URL} to become ready..."
 MAX_RETRIES=60
 RETRY_COUNT=0
 
-until curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" "${SONAR_URL}/api/system/status" | grep -q '"status":"UP"'; do
+# Check via host ingress first; fallback to pod exec if ingress is not responding or routing
+check_sonar_status() {
+  if curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" "${SONAR_URL}/api/system/status" 2>/dev/null | grep -q '"status":"UP"'; then
+    return 0
+  fi
+  # Fallback to in-cluster pod check
+  if kubectl exec sonarqube-0 -c sonarqube -- curl -s -f -u "${SONAR_USER}:${SONAR_PASS}" "http://localhost:9000/api/system/status" 2>/dev/null | grep -q '"status":"UP"'; then
+    return 0
+  fi
+  return 1
+}
+
+until check_sonar_status; do
   RETRY_COUNT=$((RETRY_COUNT + 1))
   if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
     echo "ERROR: Timed out waiting for SonarQube to become ready."
@@ -22,7 +34,42 @@ until curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" "${SONAR_URL}/api/system/st
   sleep 5
 done
 
-echo "==> SonarQube is UP!"
+# Helper for making authenticated GET calls to SonarQube with automatic in-cluster fallback
+sonar_get() {
+  local path="$1"
+  local res
+  res=$(curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" "${SONAR_URL}${path}" 2>/dev/null || true)
+  if [[ -n "${res}" ]] && echo "${res}" | jq empty 2>/dev/null; then
+    echo "${res}"
+    return 0
+  fi
+  # Fallback to in-cluster pod exec
+  res=$(kubectl exec sonarqube-0 -c sonarqube -- curl -s -f -u "${SONAR_USER}:${SONAR_PASS}" "http://localhost:9000${path}" 2>/dev/null || true)
+  if [[ -n "${res}" ]] && echo "${res}" | jq empty 2>/dev/null; then
+    echo "${res}"
+    return 0
+  fi
+  echo "{}"
+}
+
+# Helper for making authenticated POST calls to SonarQube with automatic in-cluster fallback
+sonar_post() {
+  local path="$1"
+  shift
+  local res
+  res=$(curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}${path}" "$@" 2>/dev/null || true)
+  if [[ -n "${res}" ]] && echo "${res}" | jq empty 2>/dev/null; then
+    echo "${res}"
+    return 0
+  fi
+  # Fallback to in-cluster pod exec
+  res=$(kubectl exec sonarqube-0 -c sonarqube -- curl -s -f -u "${SONAR_USER}:${SONAR_PASS}" -X POST "http://localhost:9000${path}" "$@" 2>/dev/null || true)
+  if [[ -n "${res}" ]] && echo "${res}" | jq empty 2>/dev/null; then
+    echo "${res}"
+    return 0
+  fi
+  echo "{}"
+}
 
 # ---------------------------------------------------------------------------
 # 1. Quality Profiles: Production Java & Production Kotlin
@@ -38,15 +85,15 @@ setup_quality_profile() {
 
   # Search if target profile already exists
   local profile_search
-  profile_search=$(curl -k -s -u "${SONAR_USER}:${SONAR_PASS}" "${SONAR_URL}/api/qualityprofiles/search?language=${lang}")
+  profile_search=$(sonar_get "/api/qualityprofiles/search?language=${lang}")
 
   local target_key
-  target_key=$(echo "${profile_search}" | jq -r --arg name "${target_profile_name}" '.profiles[] | select(.name == $name) | .key // empty')
+  target_key=$(echo "${profile_search}" | jq -r --arg name "${target_profile_name}" '.profiles[]? | select(.name == $name) | .key // empty' 2>/dev/null || true)
 
   if [[ -z "${target_key}" ]]; then
     # Find built-in "Sonar way" profile key to copy from
     local sonar_way_key
-    sonar_way_key=$(echo "${profile_search}" | jq -r '.profiles[] | select(.name == "Sonar way") | .key // empty')
+    sonar_way_key=$(echo "${profile_search}" | jq -r '.profiles[]? | select(.name == "Sonar way") | .key // empty' 2>/dev/null || true)
 
     if [[ -z "${sonar_way_key}" ]]; then
       echo "ERROR: Could not locate built-in 'Sonar way' profile for ${lang}."
@@ -55,10 +102,10 @@ setup_quality_profile() {
 
     echo "Copying 'Sonar way' (${sonar_way_key}) to '${target_profile_name}'..."
     local copy_res
-    copy_res=$(curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}/api/qualityprofiles/copy" \
+    copy_res=$(sonar_post "/api/qualityprofiles/copy" \
       --data-urlencode "fromKey=${sonar_way_key}" \
       --data-urlencode "toName=${target_profile_name}")
-    target_key=$(echo "${copy_res}" | jq -r '.key // empty')
+    target_key=$(echo "${copy_res}" | jq -r '.key // empty' 2>/dev/null || true)
     echo "✓ Profile '${target_profile_name}' created with key: ${target_key}"
   else
     echo "✓ Profile '${target_profile_name}' already exists (key: ${target_key})."
@@ -163,12 +210,12 @@ echo ""
 echo "==> Configuring Quality Gate with >= 80% code coverage requirement..."
 
 QG_NAME="Production Ready"
-QG_LIST=$(curl -k -s -u "${SONAR_USER}:${SONAR_PASS}" "${SONAR_URL}/api/qualitygates/list")
-QG_EXISTS=$(echo "${QG_LIST}" | jq -r --arg name "${QG_NAME}" '.qualitygates[] | select(.name == $name) | .name // empty')
+QG_LIST=$(sonar_get "/api/qualitygates/list")
+QG_EXISTS=$(echo "${QG_LIST}" | jq -r --arg name "${QG_NAME}" '.qualitygates[]? | select(.name == $name) | .name // empty' 2>/dev/null || true)
 
 if [[ -z "${QG_EXISTS}" ]]; then
   echo "Creating Quality Gate '${QG_NAME}'..."
-  curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}/api/qualitygates/create" \
+  sonar_post "/api/qualitygates/create" \
     --data-urlencode "name=${QG_NAME}" > /dev/null
   echo "✓ Quality Gate '${QG_NAME}' created."
 else
@@ -181,7 +228,7 @@ add_condition() {
   local op="$2"
   local error="$3"
 
-  curl -k -s -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}/api/qualitygates/create_condition" \
+  sonar_post "/api/qualitygates/create_condition" \
     --data-urlencode "gateName=${QG_NAME}" \
     --data-urlencode "metric=${metric}" \
     --data-urlencode "op=${op}" \
@@ -196,7 +243,7 @@ add_condition "new_violations" "GT" "0"
 add_condition "new_security_hotspots_reviewed" "LT" "100"
 
 echo "Setting '${QG_NAME}' as default Quality Gate..."
-curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}/api/qualitygates/set_as_default" \
+sonar_post "/api/qualitygates/set_as_default" \
   --data-urlencode "name=${QG_NAME}" > /dev/null
 
 echo "✓ Quality Gate '${QG_NAME}' is now the default quality gate."
@@ -209,13 +256,13 @@ echo "==> Checking Jenkins SonarQube analysis token..."
 TOKEN_FILE="${ROOT_DIR:-.}/certs/sonar-token.txt"
 TOKEN_TO_SYNC=""
 
-TOKEN_LIST=$(curl -k -s -u "${SONAR_USER}:${SONAR_PASS}" "${SONAR_URL}/api/user_tokens/search" || echo "{}")
-TOKEN_EXISTS=$(echo "${TOKEN_LIST}" | jq -r '.userTokens[] | select(.name == "jenkins-pipeline") | .name // empty' 2>/dev/null || true)
+TOKEN_LIST=$(sonar_get "/api/user_tokens/search")
+TOKEN_EXISTS=$(echo "${TOKEN_LIST}" | jq -r '.userTokens[]? | select(.name == "jenkins-pipeline") | .name // empty' 2>/dev/null || true)
 
 if [[ -z "${TOKEN_EXISTS}" ]]; then
-  NEW_TOKEN=$(curl -k -s -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}/api/user_tokens/generate" \
+  NEW_TOKEN=$(sonar_post "/api/user_tokens/generate" \
     --data-urlencode "name=jenkins-pipeline" \
-    --data-urlencode "type=GLOBAL_ANALYSIS_TOKEN" | jq -r .token)
+    --data-urlencode "type=GLOBAL_ANALYSIS_TOKEN" | jq -r .token 2>/dev/null || true)
   echo "✓ Created new analysis token for Jenkins: ${NEW_TOKEN}"
   mkdir -p "$(dirname "${TOKEN_FILE}")"
   echo "${NEW_TOKEN}" > "${TOKEN_FILE}"

@@ -1,7 +1,25 @@
-.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree
+.PHONY: help status start stop cluster-up cluster-down deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
+
+# ---------------------------------------------------------------------------
+# Detect OS and set the correct k3d config and container socket.
+# On macOS (OrbStack): use k3d-config.macos.yaml, DOCKER_HOST via OrbStack.
+# On Linux (Rootless Podman): use k3d-config.yaml, DOCKER_HOST via Podman.
+# ---------------------------------------------------------------------------
+OS := $(shell uname -s)
+ifeq ($(OS),Darwin)
+  K3D_CONFIG     := k3d-config.macos.yaml
+  DOCKER_HOST    ?= unix://$(HOME)/.orbstack/run/docker.sock
+  export DOCKER_HOST
+else
+  K3D_CONFIG     := k3d-config.yaml
+  XDG_RUNTIME_DIR ?= /run/user/$(shell id -u)
+  DOCKER_HOST    ?= unix://$(XDG_RUNTIME_DIR)/podman/podman.sock
+  export DOCKER_HOST
+endif
 
 help:
 	@echo "Available commands:"
+	@echo "  make setup-macos         - Install all tools & configure DNS/TLS for macOS (OrbStack)"
 	@echo "  make start               - Start existing k3d cluster and local registry"
 	@echo "  make stop                - Stop running k3d cluster and registry (preserves state)"
 	@echo "  make status              - Show cluster status, pods, and ingress"
@@ -31,6 +49,9 @@ help:
 	@echo "  make deploy-all          - Deploy all platform services, TLS, and ingress"
 	@echo "  make cluster-up          - Create k3d cluster with local registry"
 	@echo "  make cluster-down        - Destroy k3d cluster and registry"
+
+setup-macos:
+	./scripts/setup-macos.sh
 
 status:
 	@echo "=== Nodes ==="
@@ -62,14 +83,17 @@ generate-certs:
 create-tls-secret:
 	kubectl create secret tls local-wildcard-tls --cert=certs/local-cert.pem --key=certs/local-key.pem --dry-run=client -o yaml | kubectl apply -f -
 
+# Helm upgrade flags: --force-conflicts ensures Server-Side Apply (Helm v4) handles field ownership conflicts gracefully
+HELM_UPGRADE_FLAGS := --force-conflicts
+
 deploy-vault:
-	helm upgrade --install vault hashicorp/vault -f helm/vault/values.yaml --timeout 15m
+	helm upgrade --install vault hashicorp/vault -f helm/vault/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
 
 deploy-consul:
-	helm upgrade --install consul hashicorp/consul -f helm/consul/values.yaml --timeout 15m
+	helm upgrade --install consul hashicorp/consul -f helm/consul/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
 
 deploy-postgres:
-	helm upgrade --install postgres helm/postgres --timeout 15m
+	helm upgrade --install postgres helm/postgres --timeout 15m $(HELM_UPGRADE_FLAGS)
 
 setup-vault-secrets:
 	./scripts/setup-vault-secrets.sh
@@ -78,22 +102,22 @@ setup-consul-config:
 	./scripts/setup-consul-config.sh
 
 deploy-jenkins:
-	helm upgrade --install jenkins jenkins/jenkins -f helm/jenkins/values.yaml --timeout 15m
+	helm upgrade --install jenkins jenkins/jenkins -f helm/jenkins/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
 
 deploy-argocd:
-	helm upgrade --install argocd argo/argo-cd -f helm/argocd/values.yaml --timeout 15m
+	helm upgrade --install argocd argo/argo-cd -f helm/argocd/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
 
 deploy-sonarqube:
-	helm upgrade --install sonarqube sonarqube/sonarqube -f helm/sonarqube/values.yaml --timeout 15m
+	helm upgrade --install sonarqube sonarqube/sonarqube -f helm/sonarqube/values.yaml --timeout 25m $(HELM_UPGRADE_FLAGS)
 
 setup-sonarqube-rules:
 	./scripts/setup-sonarqube-rules.sh
 
 deploy-openobserve:
-	helm upgrade --install openobserve openobserve/openobserve-standalone -f helm/openobserve/values.yaml --timeout 15m
+	helm upgrade --install openobserve openobserve/openobserve-standalone -f helm/openobserve/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
 
 deploy-fluent-bit:
-	helm upgrade --install fluent-bit fluent/fluent-bit -f helm/fluent-bit/values.yaml --timeout 15m
+	helm upgrade --install fluent-bit fluent/fluent-bit -f helm/fluent-bit/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
 
 setup-openobserve-dashboards:
 	./scripts/setup-openobserve-dashboards.sh
@@ -112,7 +136,11 @@ cleanup-storage:
 	./scripts/cleanup-storage.sh
 
 deploy-cleanup-cronjob:
+ifeq ($(OS),Darwin)
+	@sed 's|/run/podman/podman.sock|/var/run/docker.sock|g' manifests/jenkins/jenkins-storage-cleanup-cronjob.yaml | kubectl apply -f -
+else
 	kubectl apply -f manifests/jenkins/jenkins-storage-cleanup-cronjob.yaml
+endif
 
 healthcheck:
 	./scripts/healthcheck.sh
@@ -123,8 +151,7 @@ lint:
 worktree:
 	./scripts/worktree-helper.sh $(BRANCH) $(TARGET_DIR)
 
-deploy-all: deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards create-tls-secret deploy-ingress seed-jobs deploy-cleanup-cronjob
-
+deploy-all: create-tls-secret deploy-ingress deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards seed-jobs deploy-cleanup-cronjob
 deploy-apps:
 	kubectl apply -f manifests/apps/ilmiya-backend/deployment.yaml
 
@@ -133,10 +160,17 @@ deploy-argocd-apps:
 
 start:
 	@echo "Starting local registry and k3d cluster..."
+ifeq ($(OS),Darwin)
+	@docker start k3d-dev-registry || true
+	@docker start k3d-dev-cluster-server-0 || true
+	@docker start k3d-dev-cluster-serverlb || true
+	@docker exec k3d-dev-cluster-serverlb nginx -s reload >/dev/null 2>&1 || true
+else
 	@podman start k3d-dev-registry || true
 	@podman start k3d-dev-cluster-server-0 || true
 	@podman start k3d-dev-cluster-serverlb || true
 	@podman exec k3d-dev-cluster-serverlb nginx -s reload >/dev/null 2>&1 || true
+endif
 	@echo "Waiting for cluster control-plane to become ready..."
 	@until kubectl get nodes >/dev/null 2>&1; do sleep 1; done
 	@echo "Cluster is ready."
@@ -144,14 +178,24 @@ start:
 
 stop:
 	@echo "Stopping k3d cluster and local registry..."
+ifeq ($(OS),Darwin)
+	@docker stop -t 2 k3d-dev-cluster-serverlb >/dev/null 2>&1 || true
+	@docker stop -t 10 k3d-dev-cluster-server-0 >/dev/null 2>&1 || docker kill k3d-dev-cluster-server-0 >/dev/null 2>&1 || true
+	@docker stop -t 2 k3d-dev-registry >/dev/null 2>&1 || true
+else
 	@podman stop -t 2 k3d-dev-cluster-serverlb >/dev/null 2>&1 || true
 	@podman stop -t 10 k3d-dev-cluster-server-0 >/dev/null 2>&1 || podman kill k3d-dev-cluster-server-0 >/dev/null 2>&1 || true
 	@podman stop -t 2 k3d-dev-registry >/dev/null 2>&1 || true
+endif
 	@echo "Cluster and registry stopped successfully."
 
 cluster-up:
+ifeq ($(OS),Darwin)
+	k3d registry create --default-network bridge dev-registry --port 0.0.0.0:5000 || true
+else
 	k3d registry create --default-network podman dev-registry --port 0.0.0.0:5000 || true
-	k3d cluster create --config k3d-config.yaml
+endif
+	k3d cluster create --config $(K3D_CONFIG)
 
 cluster-down:
 	k3d cluster delete dev-cluster || true
