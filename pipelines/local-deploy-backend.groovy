@@ -6,7 +6,7 @@ properties([
         artifactNumToKeepStr: '5'
     )),
     parameters([
-        string(name: 'REPO_URL', defaultValue: 'git@github.com:edmaputra/ilmiya.git', description: 'Git repository URL'),
+        string(name: 'REPO_URL', defaultValue: 'https://github.com/edmaputra/ilmiya.git', description: 'Git repository URL'),
         string(name: 'BRANCH', defaultValue: 'main', description: 'Git branch or tag to deploy'),
         string(name: 'IMAGE_NAME', defaultValue: 'ilmiya-backend', description: 'Container image name'),
         booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run Gradle integration tests with Testcontainers and verify code coverage'),
