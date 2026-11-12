@@ -37,15 +37,20 @@ done
 # Helper for making authenticated GET calls to SonarQube with automatic in-cluster fallback
 sonar_get() {
   local path="$1"
-  local res
-  res=$(curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" "${SONAR_URL}${path}" 2>/dev/null || true)
-  if [[ -n "${res}" ]] && echo "${res}" | jq empty 2>/dev/null; then
+  local res http_code
+  res=$(curl -k -s -w "\n%{http_code}" -u "${SONAR_USER}:${SONAR_PASS}" "${SONAR_URL}${path}" 2>/dev/null || true)
+  http_code=$(echo "${res}" | tail -n1)
+  res=$(echo "${res}" | sed '$d')
+  if [[ "${http_code}" =~ ^2 ]] && echo "${res}" | jq empty 2>/dev/null; then
     echo "${res}"
     return 0
   fi
   # Fallback to in-cluster pod exec
-  res=$(kubectl exec sonarqube-0 -c sonarqube -- curl -s -f -u "${SONAR_USER}:${SONAR_PASS}" "http://localhost:9000${path}" 2>/dev/null || true)
-  if [[ -n "${res}" ]] && echo "${res}" | jq empty 2>/dev/null; then
+  res=$(kubectl exec sonarqube-0 -c sonarqube -- curl -s -w "\n%{http_code}" \
+    -u "${SONAR_USER}:${SONAR_PASS}" "http://localhost:9000${path}" 2>/dev/null || true)
+  http_code=$(echo "${res}" | tail -n1)
+  res=$(echo "${res}" | sed '$d')
+  if [[ "${http_code}" =~ ^2 ]] && echo "${res}" | jq empty 2>/dev/null; then
     echo "${res}"
     return 0
   fi
@@ -53,19 +58,29 @@ sonar_get() {
 }
 
 # Helper for making authenticated POST calls to SonarQube with automatic in-cluster fallback
+# Note: -f is intentionally omitted here; SonarQube often returns 204 No Content on success
+# which can cause curl to close the connection and trigger exit 56 on some platforms.
 sonar_post() {
   local path="$1"
   shift
-  local res
-  res=$(curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}${path}" "$@" 2>/dev/null || true)
-  if [[ -n "${res}" ]] && echo "${res}" | jq empty 2>/dev/null; then
+  local http_code res
+  # Capture both body and HTTP status; -w appends status after body
+  res=$(curl -k -s -w "\n%{http_code}" -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}${path}" "$@" 2>/dev/null || true)
+  http_code=$(echo "${res}" | tail -n1)
+  res=$(echo "${res}" | sed '$d')
+  # 2xx responses are success; return body (may be empty for 204)
+  if [[ "${http_code}" =~ ^2 ]]; then
     echo "${res}"
     return 0
   fi
-  # Fallback to in-cluster pod exec
-  res=$(kubectl exec sonarqube-0 -c sonarqube -- curl -s -f -u "${SONAR_USER}:${SONAR_PASS}" -X POST "http://localhost:9000${path}" "$@" 2>/dev/null || true)
-  if [[ -n "${res}" ]] && echo "${res}" | jq empty 2>/dev/null; then
-    echo "${res}"
+  # Non-2xx or curl failure — try in-cluster pod exec fallback
+  local fallback_res fallback_code
+  fallback_res=$(kubectl exec sonarqube-0 -c sonarqube -- curl -s -w "\n%{http_code}" \
+    -u "${SONAR_USER}:${SONAR_PASS}" -X POST "http://localhost:9000${path}" "$@" 2>/dev/null || true)
+  fallback_code=$(echo "${fallback_res}" | tail -n1)
+  fallback_res=$(echo "${fallback_res}" | sed '$d')
+  if [[ "${fallback_code}" =~ ^2 ]]; then
+    echo "${fallback_res}"
     return 0
   fi
   echo "{}"
@@ -118,7 +133,7 @@ setup_quality_profile() {
     local res
     res=$(curl -k -s -o /dev/null -w "%{http_code}" -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}/api/qualityprofiles/activate_rule" \
       --data-urlencode "key=${target_key}" \
-      --data-urlencode "rule=${rule}")
+      --data-urlencode "rule=${rule}" 2>/dev/null || echo "000")
     if [[ "${res}" == "200" || "${res}" == "204" ]]; then
       activated=$((activated + 1))
     fi
@@ -126,8 +141,9 @@ setup_quality_profile() {
   echo "✓ Successfully verified/activated rules on '${target_profile_name}'."
 
   # Set as default profile for this language
+  # sonar_post is used here (no -f flag) so a 204 No Content response does not cause exit 56
   echo "Setting '${target_profile_name}' as default profile for ${lang}..."
-  curl -k -s -f -u "${SONAR_USER}:${SONAR_PASS}" -X POST "${SONAR_URL}/api/qualityprofiles/set_default" \
+  sonar_post "/api/qualityprofiles/set_default" \
     --data-urlencode "language=${lang}" \
     --data-urlencode "qualityProfile=${target_profile_name}" > /dev/null
   echo "✓ '${target_profile_name}' is now the default Quality Profile for ${lang}."
