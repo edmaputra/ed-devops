@@ -27,6 +27,9 @@ spec:
       image: gcr.io/kaniko-project/executor:debug
       command: ['/busybox/cat']
       tty: true
+      env:
+        - name: GODEBUG
+          value: "http2client=0"
       resources:
         requests:
           cpu: 200m
@@ -54,6 +57,9 @@ podTemplate(yaml: podYaml) {
                   --destination=k3d-dev-registry:5000/${params.IMAGE_NAME}:${env.BUILD_NUMBER} \
                   --destination=k3d-dev-registry:5000/${params.IMAGE_NAME}:latest \
                   ${cacheFlags} \
+                  --image-download-retry=3 \
+                  --image-fs-extract-retry=3 \
+                  --push-retry=3 \
                   --insecure \
                   --skip-tls-verify
                 """
