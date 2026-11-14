@@ -32,6 +32,9 @@ make generate-certs
 # Step 3 — Create the k3d cluster (auto-selects k3d-config.macos.yaml)
 make cluster-up
 
+# (Optional) Pre-pull platform images into cache for faster deploy
+make preload-images
+
 # Step 4 — Deploy all platform services
 make create-tls-secret
 make deploy-all
@@ -70,6 +73,9 @@ make generate-certs
 
 # Step 5 — Create the k3d cluster (auto-selects k3d-config.yaml)
 make cluster-up
+
+# (Optional) Pre-pull platform images into cache for faster deploy
+make preload-images
 
 # Step 6 — Deploy all platform services
 make create-tls-secret

@@ -31,8 +31,8 @@ jvmCeOpts: "-Xms256m -Xmx512m"
 # Startup probe tuning for local dev environments
 startupProbe:
   initialDelaySeconds: 60
-  periodSeconds: 10
-  failureThreshold: 60
+  periodSeconds: 15
+  failureThreshold: 80
 
 service:
   type: ClusterIP

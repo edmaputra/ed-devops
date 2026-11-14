@@ -1,4 +1,4 @@
-.PHONY: help status start stop cluster-up cluster-down seed-images deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
+.PHONY: help status start stop cluster-up cluster-down seed-images preload-images deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
 
 # ---------------------------------------------------------------------------
 # Detect OS and set the correct k3d config and container socket.
@@ -10,11 +10,13 @@ ifeq ($(OS),Darwin)
   K3D_CONFIG     := k3d-config.macos.yaml
   DOCKER_HOST    ?= unix://$(HOME)/.orbstack/run/docker.sock
   export DOCKER_HOST
+  DOCKER_PUSH_FLAGS ?=
 else
   K3D_CONFIG     := k3d-config.yaml
   XDG_RUNTIME_DIR ?= /run/user/$(shell id -u)
   DOCKER_HOST    ?= unix://$(XDG_RUNTIME_DIR)/podman/podman.sock
   export DOCKER_HOST
+  DOCKER_PUSH_FLAGS ?= $(shell docker --version 2>/dev/null | grep -qi podman && echo "--tls-verify=false")
 endif
 
 help:
@@ -49,6 +51,7 @@ help:
 	@echo "  make deploy-all          - Deploy all platform services, TLS, and ingress"
 	@echo "  make cluster-up          - Create k3d cluster with local registry"
 	@echo "  make seed-images         - Pull upstream images and push them to the local registry"
+	@echo "  make preload-images      - Pre-pull all platform container images into k3d containerd cache"
 	@echo "  make cluster-down        - Destroy k3d cluster and registry"
 
 setup-macos:
@@ -84,8 +87,8 @@ generate-certs:
 create-tls-secret:
 	kubectl create secret tls local-wildcard-tls --cert=certs/local-cert.pem --key=certs/local-key.pem --dry-run=client -o yaml | kubectl apply -f -
 
-# Helm upgrade flags: --force-conflicts ensures Server-Side Apply (Helm v4) handles field ownership conflicts gracefully
-HELM_UPGRADE_FLAGS := --force-conflicts
+# Helm upgrade flags: --force-conflicts is only supported in Helm v4+ (Server-Side Apply)
+HELM_UPGRADE_FLAGS ?= $(shell helm upgrade --help 2>&1 | grep -q -- '--force-conflicts' && echo '--force-conflicts')
 
 deploy-vault:
 	helm upgrade --install vault hashicorp/vault -f helm/vault/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
@@ -109,7 +112,7 @@ deploy-argocd:
 	helm upgrade --install argocd argo/argo-cd -f helm/argocd/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
 
 deploy-sonarqube:
-	helm upgrade --install sonarqube sonarqube/sonarqube -f helm/sonarqube/values.yaml --timeout 25m $(HELM_UPGRADE_FLAGS)
+	helm upgrade --install sonarqube sonarqube/sonarqube -f helm/sonarqube/values.yaml --timeout 35m $(HELM_UPGRADE_FLAGS)
 
 setup-sonarqube-rules:
 	./scripts/setup-sonarqube-rules.sh
@@ -204,18 +207,40 @@ seed-images:
 	@echo "--- Fluent Bit ---"
 	docker pull cr.fluentbit.io/fluent/fluent-bit:3.2
 	docker tag  cr.fluentbit.io/fluent/fluent-bit:3.2 localhost:5000/fluent-bit:latest
-	docker push localhost:5000/fluent-bit:latest
+	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/fluent-bit:latest
 
 	@echo "--- OpenObserve ---"
 	docker pull public.ecr.aws/zinclabs/openobserve:latest
 	docker tag  public.ecr.aws/zinclabs/openobserve:latest localhost:5000/openobserve:latest
-	docker push localhost:5000/openobserve:latest
+	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/openobserve:latest
 
 	@echo "--- BusyBox ---"
 	docker pull busybox:1.36
 	docker tag  busybox:1.36 localhost:5000/busybox:latest
-	docker push localhost:5000/busybox:latest
+	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/busybox:latest
 	@echo "=== Image seeding complete ==="
+
+preload-images: seed-images
+	@echo "=== Pre-pulling platform images into k3d cluster containerd cache ==="
+	@for img in \
+		docker.io/library/sonarqube:26.9.0.129388-community \
+		docker.io/jenkins/jenkins:2.580.2-jdk25 \
+		docker.io/hashicorp/vault:2.0.4 \
+		docker.io/hashicorp/vault-k8s:1.7.6 \
+		docker.io/hashicorp/consul:2.1.0 \
+		docker.io/hashicorp/consul-k8s-control-plane:2.1.0 \
+		quay.io/argoproj/argocd:v3.6.1 \
+		docker.io/library/postgres:latest \
+		ecr-public.aws.com/docker/library/redis:8.6.4-alpine \
+		docker.io/kiwigrid/k8s-sidecar:2.14.1 \
+		docker.io/curlimages/curl:8.23.0 \
+		k3d-dev-registry:5000/fluent-bit:latest \
+		k3d-dev-registry:5000/openobserve:latest \
+		k3d-dev-registry:5000/busybox:latest; do \
+		echo "--> Pulling $$img..."; \
+		docker exec k3d-dev-cluster-server-0 crictl pull "$$img" || true; \
+	done
+	@echo "=== Platform images pre-pull complete ==="
 
 cluster-down:
 	k3d cluster delete dev-cluster || true
