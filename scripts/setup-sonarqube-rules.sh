@@ -9,7 +9,7 @@ SONAR_USER="${SONAR_USER:-admin}"
 SONAR_PASS="${SONAR_PASS:-admin}"
 
 echo "==> Waiting for SonarQube at ${SONAR_URL} to become ready..."
-MAX_RETRIES=60
+MAX_RETRIES=120
 RETRY_COUNT=0
 
 # Check via host ingress first; fallback to pod exec if ingress is not responding or routing
@@ -30,8 +30,8 @@ until check_sonar_status; do
     echo "ERROR: Timed out waiting for SonarQube to become ready."
     exit 1
   fi
-  echo "SonarQube is starting up... waiting 5s (attempt ${RETRY_COUNT}/${MAX_RETRIES})"
-  sleep 5
+  echo "SonarQube is starting up... waiting 10s (attempt ${RETRY_COUNT}/${MAX_RETRIES})"
+  sleep 10
 done
 
 # Helper for making authenticated GET calls to SonarQube with automatic in-cluster fallback
