@@ -20,7 +20,7 @@ registries:
   use:
     - k3d-dev-registry:5000
 volumes:
-  - volume: /run/user/1000/podman/podman.sock:/run/podman/podman.sock
+  - volume: /run/user/1000/podman:/run/podman
     nodeFilters:
       - server:0
 options:
