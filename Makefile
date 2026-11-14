@@ -1,4 +1,4 @@
-.PHONY: help status start stop cluster-up cluster-down seed-images preload-images deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
+.PHONY: help status start stop cluster-up cluster-down seed-images preload-images deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-argocd-image-updater deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
 
 # ---------------------------------------------------------------------------
 # Detect OS and set the correct k3d config and container socket.
@@ -38,6 +38,7 @@ help:
 	@echo "  make setup-consul-config - Seed application configuration into HashiCorp Consul KV"
 	@echo "  make deploy-jenkins      - Deploy or upgrade Jenkins CI/CD via Helm"
 	@echo "  make deploy-argocd       - Deploy or upgrade ArgoCD via Helm"
+	@echo "  make deploy-argocd-image-updater - Deploy or upgrade ArgoCD Image Updater via Helm"
 	@echo "  make deploy-sonarqube    - Deploy or upgrade SonarQube via Helm"
 	@echo "  make setup-sonarqube-rules - Configure Java/Kotlin quality profiles and 80% coverage quality gate"
 	@echo "  make deploy-openobserve  - Deploy or upgrade OpenObserve via Helm"
@@ -111,6 +112,9 @@ deploy-jenkins:
 deploy-argocd:
 	helm upgrade --install argocd argo/argo-cd -f helm/argocd/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
 
+deploy-argocd-image-updater:
+	helm upgrade --install argocd-image-updater argo/argocd-image-updater -f helm/argocd-image-updater/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
+
 deploy-sonarqube:
 	helm upgrade --install sonarqube sonarqube/sonarqube -f helm/sonarqube/values.yaml --timeout 35m $(HELM_UPGRADE_FLAGS)
 
@@ -155,9 +159,10 @@ lint:
 worktree:
 	./scripts/worktree-helper.sh $(BRANCH) $(TARGET_DIR)
 
-deploy-all: create-tls-secret deploy-ingress deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards seed-jobs deploy-cleanup-cronjob
+deploy-all: create-tls-secret deploy-ingress deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-argocd-image-updater deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards seed-jobs deploy-cleanup-cronjob
 deploy-apps:
-	kubectl apply -f manifests/apps/ilmiya-backend/deployment.yaml
+	kubectl apply -k manifests/apps/ilmiya-backend
+	kubectl apply -k manifests/apps/ilmiya-frontend
 
 deploy-argocd-apps:
 	kubectl apply -f manifests/argocd/applications.yaml
@@ -218,6 +223,11 @@ seed-images:
 	docker pull busybox:1.36
 	docker tag  busybox:1.36 localhost:5000/busybox:latest
 	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/busybox:latest
+
+	@echo "--- ArgoCD Image Updater ---"
+	docker pull quay.io/argoprojlabs/argocd-image-updater:v1.5.0
+	docker tag  quay.io/argoprojlabs/argocd-image-updater:v1.5.0 localhost:5000/argocd-image-updater:latest
+	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/argocd-image-updater:latest
 	@echo "=== Image seeding complete ==="
 
 preload-images: seed-images
@@ -225,11 +235,13 @@ preload-images: seed-images
 	@for img in \
 		docker.io/library/sonarqube:26.9.0.129388-community \
 		docker.io/jenkins/jenkins:2.580.2-jdk25 \
+		docker.io/jenkins/inbound-agent:3391.va_37fa_a_305d6d-1-jdk25 \
 		docker.io/hashicorp/vault:2.0.4 \
 		docker.io/hashicorp/vault-k8s:1.7.6 \
 		docker.io/hashicorp/consul:2.1.0 \
 		docker.io/hashicorp/consul-k8s-control-plane:2.1.0 \
 		quay.io/argoproj/argocd:v3.6.1 \
+		k3d-dev-registry:5000/argocd-image-updater:latest \
 		docker.io/library/postgres:latest \
 		ecr-public.aws.com/docker/library/redis:8.6.4-alpine \
 		docker.io/kiwigrid/k8s-sidecar:2.14.1 \

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ilmiya-frontend
+  labels:
+    app.kubernetes.io/name: ilmiya-frontend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http
+  selector:
+    app.kubernetes.io/name: ilmiya-frontend
