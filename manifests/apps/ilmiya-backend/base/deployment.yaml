@@ -1,16 +1,7 @@
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: ilmiya-backend
-  namespace: default
-  labels:
-    app.kubernetes.io/name: ilmiya-backend
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ilmiya-backend
-  namespace: default
   labels:
     app.kubernetes.io/name: ilmiya-backend
 spec:
@@ -37,7 +28,7 @@ spec:
       serviceAccountName: ilmiya-backend
       containers:
         - name: ilmiya-backend
-          image: k3d-dev-registry:5000/ilmiya-backend:latest
+          image: ilmiya-backend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -106,19 +97,3 @@ spec:
             limits:
               cpu: 2000m
               memory: 1536Mi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: ilmiya-backend
-  namespace: default
-  labels:
-    app.kubernetes.io/name: ilmiya-backend
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      name: http
-  selector:
-    app.kubernetes.io/name: ilmiya-backend

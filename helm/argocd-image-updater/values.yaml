@@ -1,0 +1,34 @@
+# Helm values for Argo CD Image Updater in local development lab
+replicaCount: 1
+
+image:
+  repository: k3d-dev-registry:5000/argocd-image-updater
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+createClusterRoles: true
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+config:
+  name: argocd-image-updater-config
+  registries:
+    - name: Local Registry
+      api_url: http://k3d-dev-registry:5000
+      prefix: k3d-dev-registry:5000
+      ping: yes
+      insecure: yes
+
+extraArgs:
+  - --interval
+  - 1m
+  - --argocd-server-addr
+  - argocd-server.default.svc:80
+  - --argocd-insecure
+  - --argocd-plaintext

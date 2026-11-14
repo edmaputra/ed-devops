@@ -124,15 +124,20 @@ graph TD
 
 ---
 
-### Milestone 4: GitOps Standardization & Manifest Architecture
+### Milestone 4: GitOps Standardization & Manifest Architecture (✅ Completed)
 **Objective**: Eliminate imperative rollouts and achieve fully automated GitOps synchronization.
 
-1. **Kustomize / Helm App Manifests**:
-   - Refactor `manifests/apps/ilmiya-backend` and `manifests/apps/ilmiya-frontend` from static manifests to structured Kustomize bases and overlays.
-   - Standardize resource limits, environment variables, and ingress rules across microservices.
-2. **ArgoCD Image Updater**:
-   - Deploy ArgoCD Image Updater to continuously track new tags pushed to `k3d-dev-registry:5000`.
-   - Automatically reconcile deployments in Kubernetes without manual `kubectl rollout restart` triggers.
+1. **Kustomize App Manifests Architecture** (✅ Completed):
+   - Refactored `manifests/apps/ilmiya-backend` and `manifests/apps/ilmiya-frontend` from monolithic manifests to structured Kustomize bases (`base/`) and environment overlays (`overlays/local/`).
+   - Split manifests into standard resources (`deployment.yaml`, `service.yaml`, `serviceaccount.yaml`, `kustomization.yaml`).
+   - Standardized resource limits, health probes, labels, and image tag overrides.
+2. **ArgoCD Image Updater & Automated Synchronization** (✅ Completed):
+   - Configured and deployed ArgoCD Image Updater (`helm/argocd-image-updater/values.yaml` and `make deploy-argocd-image-updater`) tracking registry `k3d-dev-registry:5000`.
+   - Annotated ArgoCD Applications (`manifests/argocd/applications.yaml`) with `image-list`, `update-strategy: latest`, and `write-back-method: argocd`.
+   - Eliminates imperative `kubectl rollout restart` calls, enabling automatic detection and zero-touch continuous deployment upon registry image push.
+3. **CI/CD & Lint Integration** (✅ Completed):
+   - Integrated Kustomize package dry-run validation into platform static analysis (`scripts/lint.sh`, `make lint`).
+   - Updated `Makefile` targets (`deploy-apps`, `deploy-argocd-image-updater`, `seed-images`, `preload-images`) supporting the new manifest structure.
 
 ---
 

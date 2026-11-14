@@ -117,11 +117,29 @@ fi
 # ------------------------------------------------------------------------------
 echo ""
 echo -e "${BOLD}4. Validating Kubernetes Manifests (kubectl client dry-run)...${NC}"
-if kubectl apply --dry-run=client -R -f manifests/ > /dev/null 2>&1; then
-  report_pass "All Kubernetes manifests in manifests/ validated successfully"
-else
-  report_fail "Kubectl client dry-run validation failed for manifests/"
-fi
+STANDARD_DIRS=("manifests/ingress" "manifests/jenkins" "manifests/postgres" "manifests/argocd")
+ALL_STD_PASS=true
+for dir in "${STANDARD_DIRS[@]}"; do
+  if [[ -d "${dir}" ]]; then
+    if kubectl apply --dry-run=client -R -f "${dir}" > /dev/null 2>&1; then
+      report_pass "Manifests in ${dir}"
+    else
+      report_fail "Manifests in ${dir} failed client dry-run"
+      ALL_STD_PASS=false
+    fi
+  fi
+done
+
+# Validate Kustomize apps
+for app_dir in manifests/apps/*; do
+  if [[ -d "${app_dir}" && -f "${app_dir}/kustomization.yaml" ]]; then
+    if kubectl kustomize "${app_dir}" | kubectl apply --dry-run=client -f - > /dev/null 2>&1; then
+      report_pass "Kustomize package: ${app_dir}"
+    else
+      report_fail "Kustomize validation failed for ${app_dir}"
+    fi
+  fi
+done
 
 # ------------------------------------------------------------------------------
 # Summary
