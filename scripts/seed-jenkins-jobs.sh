@@ -69,14 +69,24 @@ XML
 
   # Check if job exists
   local status_code
-  status_code=$(curl -k -s -o /dev/null -w "%{http_code}" -u "${JENKINS_USER}:${JENKINS_PASS}" "${JENKINS_URL}/job/${job_name}/config.xml")
+  status_code=$(curl -k -s -o /dev/null -w "%{http_code}" -b "${COOKIE_JAR}" -c "${COOKIE_JAR}" -u "${JENKINS_USER}:${JENKINS_PASS}" "${JENKINS_URL}/job/${job_name}/config.xml")
+
+  # Obtain fresh CSRF crumb for this request session
+  local crumb_json crumb crumb_field crumb_header=()
+  crumb_json=$(curl -k -s -b "${COOKIE_JAR}" -c "${COOKIE_JAR}" -u "${JENKINS_USER}:${JENKINS_PASS}" "${JENKINS_URL}/crumbIssuer/api/json")
+  crumb=$(echo "${crumb_json}" | jq -r '.crumb // empty')
+  crumb_field=$(echo "${crumb_json}" | jq -r '.crumbRequestField // empty')
+  if [[ -n "${crumb}" && -n "${crumb_field}" ]]; then
+    crumb_header=(-H "${crumb_field}: ${crumb}")
+  fi
 
   if [[ "${status_code}" == "200" ]]; then
     echo "Updating existing job: ${job_name}..."
     curl -k -s -f -X POST "${JENKINS_URL}/job/${job_name}/config.xml" \
       -b "${COOKIE_JAR}" \
+      -c "${COOKIE_JAR}" \
       -u "${JENKINS_USER}:${JENKINS_PASS}" \
-      "${CRUMB_HEADER[@]}" \
+      "${crumb_header[@]}" \
       -H "Content-Type: application/xml" \
       --data-binary @"${tmp_xml}"
     echo "✓ Job '${job_name}' updated successfully."
@@ -84,8 +94,9 @@ XML
     echo "Creating new job: ${job_name}..."
     curl -k -s -f -X POST "${JENKINS_URL}/createItem?name=${job_name}" \
       -b "${COOKIE_JAR}" \
+      -c "${COOKIE_JAR}" \
       -u "${JENKINS_USER}:${JENKINS_PASS}" \
-      "${CRUMB_HEADER[@]}" \
+      "${crumb_header[@]}" \
       -H "Content-Type: application/xml" \
       --data-binary @"${tmp_xml}"
     echo "✓ Job '${job_name}' created successfully."

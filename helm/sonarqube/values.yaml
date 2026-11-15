@@ -28,11 +28,24 @@ resources:
 jvmOpts: "-Xms512m -Xmx1024m"
 jvmCeOpts: "-Xms256m -Xmx512m"
 
-# Startup probe tuning for local dev environments
+# Startup and health probe tuning for local dev environments
 startupProbe:
   initialDelaySeconds: 60
   periodSeconds: 15
   failureThreshold: 80
+  timeoutSeconds: 15
+
+livenessProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  failureThreshold: 10
+  timeoutSeconds: 15
+
+readinessProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 15
+  failureThreshold: 10
+  timeoutSeconds: 15
 
 service:
   type: ClusterIP
