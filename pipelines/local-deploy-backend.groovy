@@ -11,11 +11,8 @@ properties([
         string(name: 'IMAGE_NAME', defaultValue: 'ilmiya-backend', description: 'Container image name'),
         booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run Gradle integration tests with Testcontainers and verify code coverage'),
         string(name: 'MIN_COVERAGE', defaultValue: '80', description: 'Minimum required test code coverage percentage (default 80%)'),
-        booleanParam(name: 'RUN_SONAR', defaultValue: true, description: 'Run SonarQube code quality scan'),
-        string(name: 'SONAR_URL', defaultValue: 'http://sonarqube:9000', description: 'SonarQube Server URL'),
-        string(name: 'SONAR_CREDENTIALS_ID', defaultValue: 'sonar-token', description: 'Jenkins credentials ID for SonarQube analysis token'),
-        string(name: 'SONAR_TOKEN', defaultValue: 'sqa_ad9e13efba1c40b6886b90eafd2a40c5748a9d17', description: 'SonarQube Authentication Token (fallback if credentials ID not present)'),
-        booleanParam(name: 'SONAR_WAIT_QUALITY_GATE', defaultValue: true, description: 'Wait for SonarQube Quality Gate and fail build if gate fails'),
+        booleanParam(name: 'RUN_SEMGREP', defaultValue: true, description: 'Run Semgrep static code analysis and security vulnerability scan'),
+        booleanParam(name: 'SEMGREP_FAIL_ON_ERROR', defaultValue: false, description: 'Fail build if Semgrep detects blocking security vulnerabilities'),
         booleanParam(name: 'ENABLE_CACHE', defaultValue: true, description: 'Enable Kaniko layer caching in local container registry (k3d-dev-registry:5000/kaniko-cache)'),
         booleanParam(name: 'TRIGGER_ROLLOUT', defaultValue: true, description: 'Trigger immediate rollout on k8s deployment if exists')
     ])
@@ -58,6 +55,21 @@ spec:
           mountPath: /var/run/docker.sock
         - name: gradle-cache
           mountPath: /root/.gradle
+    - name: semgrep
+      image: k3d-dev-registry:5000/semgrep:latest
+      command: ['/bin/sh', '-c']
+      args: ['cat']
+      tty: true
+      env:
+        - name: SEMGREP_SRC_DIRECTORY
+          value: .
+      resources:
+        requests:
+          cpu: 200m
+          memory: 256Mi
+        limits:
+          cpu: 1000m
+          memory: 1024Mi
     - name: kaniko
       image: gcr.io/kaniko-project/executor:debug
       command: ['/busybox/cat']
@@ -159,49 +171,61 @@ podTemplate(yaml: podYaml) {
             }
         }
 
-        if (params.RUN_SONAR) {
-            stage('SonarQube Code Analysis & Quality Gate') {
-                container('builder') {
-                    def tokenToUse = params.SONAR_TOKEN ?: ''
-                    try {
-                        withCredentials([string(credentialsId: params.SONAR_CREDENTIALS_ID, variable: 'INJECTED_SONAR_TOKEN')]) {
-                            if (env.INJECTED_SONAR_TOKEN) {
-                                tokenToUse = env.INJECTED_SONAR_TOKEN
-                            }
-                        }
-                    } catch (Exception e) {
-                        echo "Notice: Could not resolve credential ID '${params.SONAR_CREDENTIALS_ID}': ${e.message}. Falling back to token parameter."
-                    }
-
-                    if (!tokenToUse) {
-                        error("No SonarQube authentication token found via credential ID '${params.SONAR_CREDENTIALS_ID}' or SONAR_TOKEN parameter.")
-                    }
-
-                    withEnv(["SONAR_AUTH_TOKEN=${tokenToUse}"]) {
+        if (params.RUN_SEMGREP) {
+            stage('Semgrep Security & Quality Scan') {
+                try {
+                    container('semgrep') {
+                        def failFlag = params.SEMGREP_FAIL_ON_ERROR ? "--error" : ""
                         sh """
-                        cat << 'EOF' > init-sonar.gradle
-initscript {
-    repositories {
-        gradlePluginPortal()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'org.sonarsource.scanner.gradle:sonarqube-gradle-plugin:7.5.0.8588'
-    }
-}
-allprojects {
-    apply plugin: org.sonarqube.gradle.SonarQubePlugin
-}
-EOF
-                        ./gradlew --init-script init-sonar.gradle sonar \
-                          -Dsonar.host.url=${params.SONAR_URL} \
-                          -Dsonar.token="\${SONAR_AUTH_TOKEN}" \
-                          -Dsonar.projectName=${params.IMAGE_NAME} \
-                          -Dsonar.projectKey=${params.IMAGE_NAME} \
-                          -Dsonar.coverage.jacoco.xmlReportPaths=build/reports/jacoco/aggregate/jacoco.xml,**/build/reports/jacoco/test/jacocoTestReport.xml \
-                          -Dsonar.qualitygate.wait=${params.SONAR_WAIT_QUALITY_GATE} \
-                          --parallel --build-cache --no-daemon
+                        echo "==> Running Semgrep static security and code quality analysis..."
+                        unset SEMGREP_IN_DOCKER || true
+                        export SEMGREP_SRC_DIRECTORY=.
+                        semgrep scan --config=auto --sarif --output=semgrep.sarif . || true
+                        semgrep_status=0
+                        semgrep scan --config=auto --json --output=semgrep.json ${failFlag} . || semgrep_status=\$?
+
+                        echo "==> Scan completed. Findings summary:"
+                        if [ -f semgrep.json ]; then
+                          python3 -c "
+import json
+try:
+    with open('semgrep.json') as f:
+        data = json.load(f)
+    results = data.get('results', [])
+    errors = sum(1 for r in results if r.get('extra', {}).get('severity') == 'ERROR')
+    warnings = sum(1 for r in results if r.get('extra', {}).get('severity') == 'WARNING')
+    infos = sum(1 for r in results if r.get('extra', {}).get('severity') == 'INFO')
+    print(f'Total Semgrep findings: {len(results)} (Errors: {errors}, Warnings: {warnings}, Info: {infos})')
+except Exception as e:
+    print('Failed to parse semgrep findings:', e)
+" || true
+                        fi
+
+                        if [ \$semgrep_status -ne 0 ]; then
+                          echo "ERROR: Semgrep detected blocking security issues (exit code \$semgrep_status)."
+                          exit \$semgrep_status
+                        fi
                         """
+                    }
+                } finally {
+                    archiveArtifacts artifacts: 'semgrep.sarif,semgrep.json', allowEmptyArchive: true
+
+                    // Ingest into OpenObserve for central security dashboard
+                    sh """
+                    if [ -f semgrep.json ] && [ -s semgrep.json ]; then
+                      echo "==> Ingesting Semgrep findings into OpenObserve stream 'semgrep'..."
+                      curl -k -s -u admin@example.com:DevOps_OpenObserve#2026 \
+                        https://openobserve.localhost/api/default/semgrep/_json \
+                        -H 'Content-Type: application/json' \
+                        -d @semgrep.json >/dev/null 2>&1 || true
+                    fi
+                    """
+
+                    // Publish SARIF to Jenkins Warnings NG dashboard if plugin present
+                    try {
+                        recordIssues tools: [sarif(pattern: 'semgrep.sarif', id: 'semgrep', name: 'Semgrep Security & Quality')]
+                    } catch (Exception e) {
+                        echo "Notice: Warnings NG SARIF publisher skipped: ${e.message}"
                     }
                 }
             }

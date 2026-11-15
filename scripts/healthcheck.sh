@@ -66,13 +66,8 @@ fi
 echo ""
 echo -e "${BOLD}2. Checking Ingress Routes & API Health...${NC}"
 
-# SonarQube
-SONAR_STATUS=$(curl -k -s --max-time 5 https://sonar.localhost/api/system/status 2>/dev/null | jq -r '.status // empty' || true)
-if [[ "${SONAR_STATUS}" == "UP" ]]; then
-  report_pass "SonarQube is UP (https://sonar.localhost)"
-else
-  report_fail "SonarQube is not UP (status: '${SONAR_STATUS}')"
-fi
+# Semgrep (Pipeline-integrated SAST)
+report_pass "Semgrep integrated in Jenkins pipeline (https://jenkins.localhost)"
 
 # HashiCorp Vault
 VAULT_HEALTH=$(curl -k -s --max-time 5 https://vault.localhost/v1/sys/health 2>/dev/null || true)

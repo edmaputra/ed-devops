@@ -31,6 +31,14 @@ data:
 
     echo "=== Initializing Application Databases and Users ==="
 
+    if [ -n "$PGDATA" ] && [ -f "$PGDATA/pg_hba.conf" ]; then
+      if ! grep -q "host all all all scram-sha-256" "$PGDATA/pg_hba.conf"; then
+        echo "Adding host rule to pg_hba.conf..."
+        echo "host all all all scram-sha-256" >> "$PGDATA/pg_hba.conf"
+        psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" -c "SELECT pg_reload_conf();" || true
+      fi
+    fi
+
     # Provision Ilmiya
     if [ -n "$ILMIYA_USER" ] && [ -n "$ILMIYA_PASSWORD" ] && [ -n "$ILMIYA_DB" ]; then
       echo "Configuring Ilmiya database ($ILMIYA_DB) and user ($ILMIYA_USER)..."
@@ -206,8 +214,23 @@ spec:
                 secretKeyRef:
                   name: postgres-secret
                   key: UWATI_DB
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: "scram-sha-256"
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
+          command:
+            - /bin/sh
+            - -c
+            - |
+              (
+                until pg_isready -U postgres -h 127.0.0.1 -p 5432 >/dev/null 2>&1; do sleep 2; done
+                if [ -f "$PGDATA/pg_hba.conf" ] && ! grep -q "host all all all scram-sha-256" "$PGDATA/pg_hba.conf"; then
+                  echo "host all all all scram-sha-256" >> "$PGDATA/pg_hba.conf"
+                  psql -U postgres -c "SELECT pg_reload_conf();" || true
+                fi
+                /docker-entrypoint-initdb.d/01-init-app-databases.sh || true
+              ) &
+              exec docker-entrypoint.sh postgres
           startupProbe:
             exec:
               command:
@@ -217,7 +240,7 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 30
+            failureThreshold: 120
           livenessProbe:
             exec:
               command:

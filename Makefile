@@ -159,7 +159,7 @@ lint:
 worktree:
 	./scripts/worktree-helper.sh $(BRANCH) $(TARGET_DIR)
 
-deploy-all: create-tls-secret deploy-ingress deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-argocd-image-updater deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards seed-jobs deploy-cleanup-cronjob
+deploy-all: create-tls-secret deploy-ingress deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-argocd-image-updater deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards seed-jobs deploy-cleanup-cronjob
 deploy-apps:
 	kubectl apply -k manifests/apps/ilmiya-backend
 	kubectl apply -k manifests/apps/ilmiya-frontend
@@ -175,6 +175,7 @@ ifeq ($(OS),Darwin)
 	@docker start k3d-dev-cluster-serverlb || true
 	@docker exec k3d-dev-cluster-serverlb nginx -s reload >/dev/null 2>&1 || true
 else
+	@test -S /run/user/$$(id -u)/podman/podman.sock || systemctl --user restart podman.socket || true
 	@podman start k3d-dev-registry || true
 	@podman start k3d-dev-cluster-server-0 || true
 	@podman start k3d-dev-cluster-serverlb || true
@@ -187,13 +188,14 @@ endif
 
 stop:
 	@echo "Stopping k3d cluster and local registry..."
+	@kubectl delete pod postgres-0 --wait=true --timeout=15s >/dev/null 2>&1 || true
 ifeq ($(OS),Darwin)
 	@docker stop -t 2 k3d-dev-cluster-serverlb >/dev/null 2>&1 || true
-	@docker stop -t 10 k3d-dev-cluster-server-0 >/dev/null 2>&1 || docker kill k3d-dev-cluster-server-0 >/dev/null 2>&1 || true
+	@docker stop -t 30 k3d-dev-cluster-server-0 >/dev/null 2>&1 || docker kill k3d-dev-cluster-server-0 >/dev/null 2>&1 || true
 	@docker stop -t 2 k3d-dev-registry >/dev/null 2>&1 || true
 else
 	@podman stop -t 2 k3d-dev-cluster-serverlb >/dev/null 2>&1 || true
-	@podman stop -t 10 k3d-dev-cluster-server-0 >/dev/null 2>&1 || podman kill k3d-dev-cluster-server-0 >/dev/null 2>&1 || true
+	@podman stop -t 30 k3d-dev-cluster-server-0 >/dev/null 2>&1 || podman kill k3d-dev-cluster-server-0 >/dev/null 2>&1 || true
 	@podman stop -t 2 k3d-dev-registry >/dev/null 2>&1 || true
 endif
 	@echo "Cluster and registry stopped successfully."
@@ -233,7 +235,7 @@ seed-images:
 preload-images: seed-images
 	@echo "=== Pre-pulling platform images into k3d cluster containerd cache ==="
 	@for img in \
-		docker.io/library/sonarqube:26.9.0.129388-community \
+		docker.io/semgrep/semgrep:latest \
 		docker.io/jenkins/jenkins:2.580.2-jdk25 \
 		docker.io/jenkins/inbound-agent:3391.va_37fa_a_305d6d-1-jdk25 \
 		docker.io/hashicorp/vault:2.0.4 \

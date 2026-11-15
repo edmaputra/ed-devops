@@ -11,6 +11,14 @@ data:
 
     echo "=== Initializing Application Databases and Users ==="
 
+    if [ -n "$PGDATA" ] && [ -f "$PGDATA/pg_hba.conf" ]; then
+      if ! grep -q "host all all all scram-sha-256" "$PGDATA/pg_hba.conf"; then
+        echo "Adding host rule to pg_hba.conf..."
+        echo "host all all all scram-sha-256" >> "$PGDATA/pg_hba.conf"
+        psql -v ON_ERROR_STOP=0 --username "$POSTGRES_USER" -c "SELECT pg_reload_conf();" || true
+      fi
+    fi
+
     # Provision Ilmiya
     if [ -n "$ILMIYA_USER" ] && [ -n "$ILMIYA_PASSWORD" ] && [ -n "$ILMIYA_DB" ]; then
       echo "Configuring Ilmiya database ($ILMIYA_DB) and user ($ILMIYA_USER)..."

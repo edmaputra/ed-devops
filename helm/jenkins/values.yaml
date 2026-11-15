@@ -26,6 +26,8 @@ controller:
   additionalPlugins:
     - "pipeline-stage-view:2.41"
     - "junit:latest"
+    - "warnings-ng:latest"
+    - "htmlpublisher:latest"
   probes:
     startupProbe:
       failureThreshold: 60

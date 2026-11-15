@@ -28,7 +28,6 @@ config:
 extraArgs:
   - --interval
   - 1m
-  - --argocd-server-addr
-  - argocd-server.default.svc:80
-  - --argocd-insecure
-  - --argocd-plaintext
+  - --argocd-namespace
+  - default
+  - --leader-election=false
