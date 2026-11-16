@@ -25,7 +25,7 @@ spec:
   serviceAccountName: jenkins
   containers:
     - name: flutter
-      image: ghcr.io/cirruslabs/flutter:stable
+      image: k3d-dev-registry:5000/flutter:stable
       command: ['cat']
       tty: true
       resources:
@@ -36,7 +36,7 @@ spec:
           cpu: 3000m
           memory: 4096Mi
     - name: kaniko
-      image: gcr.io/kaniko-project/executor:debug
+      image: k3d-dev-registry:5000/kaniko:debug
       command: ['/busybox/cat']
       tty: true
       resources:

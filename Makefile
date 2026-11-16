@@ -1,4 +1,4 @@
-.PHONY: help status start stop cluster-up cluster-down seed-images preload-images deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-argocd-image-updater deploy-sonarqube setup-sonarqube-rules deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
+.PHONY: help status start stop cluster-up cluster-down seed-images preload-images deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-argocd-image-updater deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
 
 # ---------------------------------------------------------------------------
 # Detect OS and set the correct k3d config and container socket.
@@ -39,8 +39,6 @@ help:
 	@echo "  make deploy-jenkins      - Deploy or upgrade Jenkins CI/CD via Helm"
 	@echo "  make deploy-argocd       - Deploy or upgrade ArgoCD via Helm"
 	@echo "  make deploy-argocd-image-updater - Deploy or upgrade ArgoCD Image Updater via Helm"
-	@echo "  make deploy-sonarqube    - Deploy or upgrade SonarQube via Helm"
-	@echo "  make setup-sonarqube-rules - Configure Java/Kotlin quality profiles and 80% coverage quality gate"
 	@echo "  make deploy-openobserve  - Deploy or upgrade OpenObserve via Helm"
 	@echo "  make deploy-fluent-bit   - Deploy or upgrade Fluent Bit log shipper via Helm"
 	@echo "  make setup-openobserve-dashboards - Provision initial OpenObserve metrics & log dashboards"
@@ -72,7 +70,6 @@ urls:
 	@echo "=========================================================="
 	@echo " Jenkins    : https://jenkins.localhost   (User: admin, Pass: admin123)"
 	@echo " ArgoCD     : https://argocd.localhost    (User: admin, Pass: admin123)"
-	@echo " SonarQube  : https://sonar.localhost     (User: admin, Pass: admin)"
 	@echo " OpenObserve: https://openobserve.localhost (User: admin@example.com, Pass: DevOps_OpenObserve#2026)"
 	@echo " Vault      : https://vault.localhost/ui  (Root Token: root)"
 	@echo " Consul     : https://consul.localhost/ui"
@@ -83,7 +80,7 @@ urls:
 generate-certs:
 	mkdir -p certs
 	mkcert -cert-file certs/local-cert.pem -key-file certs/local-key.pem \
-		localhost "*.localhost" vault.localhost consul.localhost jenkins.localhost argocd.localhost sonar.localhost sonarqube.localhost ilmiya.localhost "*.ilmiya.localhost" openobserve.localhost
+		localhost "*.localhost" vault.localhost consul.localhost jenkins.localhost argocd.localhost ilmiya.localhost "*.ilmiya.localhost" openobserve.localhost
 
 create-tls-secret:
 	kubectl create secret tls local-wildcard-tls --cert=certs/local-cert.pem --key=certs/local-key.pem --dry-run=client -o yaml | kubectl apply -f -
@@ -114,12 +111,6 @@ deploy-argocd:
 
 deploy-argocd-image-updater:
 	helm upgrade --install argocd-image-updater argo/argocd-image-updater -f helm/argocd-image-updater/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
-
-deploy-sonarqube:
-	helm upgrade --install sonarqube sonarqube/sonarqube -f helm/sonarqube/values.yaml --timeout 35m $(HELM_UPGRADE_FLAGS)
-
-setup-sonarqube-rules:
-	./scripts/setup-sonarqube-rules.sh
 
 deploy-openobserve:
 	helm upgrade --install openobserve openobserve/openobserve-standalone -f helm/openobserve/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
@@ -172,17 +163,25 @@ start:
 ifeq ($(OS),Darwin)
 	@docker start k3d-dev-registry || true
 	@docker start k3d-dev-cluster-server-0 || true
-	@docker start k3d-dev-cluster-serverlb || true
-	@docker exec k3d-dev-cluster-serverlb nginx -s reload >/dev/null 2>&1 || true
+	@docker start k3d-dev-cluster-serverlb >/dev/null 2>&1 || true
+	@if docker ps -q -f name=k3d-dev-cluster-serverlb | grep -q .; then \
+		for i in $$(seq 1 10); do \
+			docker exec k3d-dev-cluster-serverlb nginx -s reload >/dev/null 2>&1 && break || sleep 1; \
+		done; \
+	fi
 else
 	@test -S /run/user/$$(id -u)/podman/podman.sock || systemctl --user restart podman.socket || true
 	@podman start k3d-dev-registry || true
 	@podman start k3d-dev-cluster-server-0 || true
-	@podman start k3d-dev-cluster-serverlb || true
-	@podman exec k3d-dev-cluster-serverlb nginx -s reload >/dev/null 2>&1 || true
+	@podman start k3d-dev-cluster-serverlb >/dev/null 2>&1 || true
+	@if podman ps -q -f name=k3d-dev-cluster-serverlb | grep -q .; then \
+		for i in $$(seq 1 10); do \
+			podman exec k3d-dev-cluster-serverlb nginx -s reload >/dev/null 2>&1 && break || sleep 1; \
+		done; \
+	fi
 endif
-	@echo "Waiting for cluster control-plane to become ready..."
-	@until kubectl get nodes >/dev/null 2>&1; do sleep 1; done
+	@echo "Waiting for cluster control-plane and nodes to become Ready..."
+	@until kubectl wait --for=condition=Ready node --all --timeout=5s >/dev/null 2>&1; do sleep 2; done
 	@echo "Cluster is ready."
 	@kubectl get nodes
 
@@ -230,12 +229,31 @@ seed-images:
 	docker pull quay.io/argoprojlabs/argocd-image-updater:v1.5.0
 	docker tag  quay.io/argoprojlabs/argocd-image-updater:v1.5.0 localhost:5000/argocd-image-updater:latest
 	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/argocd-image-updater:latest
+
+	@echo "--- Semgrep ---"
+	docker pull docker.io/semgrep/semgrep:latest
+	docker tag  docker.io/semgrep/semgrep:latest localhost:5000/semgrep:latest
+	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/semgrep:latest
+
+	@echo "--- Eclipse Temurin JDK 25 ---"
+	docker pull docker.io/library/eclipse-temurin:25-jdk
+	docker tag  docker.io/library/eclipse-temurin:25-jdk localhost:5000/eclipse-temurin:25-jdk
+	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/eclipse-temurin:25-jdk
+
+	@echo "--- Kaniko Executor ---"
+	docker pull gcr.io/kaniko-project/executor:debug
+	docker tag  gcr.io/kaniko-project/executor:debug localhost:5000/kaniko:debug
+	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/kaniko:debug
+
+	@echo "--- Flutter SDK ---"
+	docker pull ghcr.io/cirruslabs/flutter:stable
+	docker tag  ghcr.io/cirruslabs/flutter:stable localhost:5000/flutter:stable
+	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/flutter:stable
 	@echo "=== Image seeding complete ==="
 
 preload-images: seed-images
 	@echo "=== Pre-pulling platform images into k3d cluster containerd cache ==="
 	@for img in \
-		docker.io/semgrep/semgrep:latest \
 		docker.io/jenkins/jenkins:2.580.2-jdk25 \
 		docker.io/jenkins/inbound-agent:3391.va_37fa_a_305d6d-1-jdk25 \
 		docker.io/hashicorp/vault:2.0.4 \
@@ -250,7 +268,11 @@ preload-images: seed-images
 		docker.io/curlimages/curl:8.23.0 \
 		k3d-dev-registry:5000/fluent-bit:latest \
 		k3d-dev-registry:5000/openobserve:latest \
-		k3d-dev-registry:5000/busybox:latest; do \
+		k3d-dev-registry:5000/busybox:latest \
+		k3d-dev-registry:5000/semgrep:latest \
+		k3d-dev-registry:5000/eclipse-temurin:25-jdk \
+		k3d-dev-registry:5000/kaniko:debug \
+		k3d-dev-registry:5000/flutter:stable; do \
 		echo "--> Pulling $$img..."; \
 		docker exec k3d-dev-cluster-server-0 crictl pull "$$img" || true; \
 	done

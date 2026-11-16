@@ -1,4 +1,4 @@
-# Local DevOps Lab (k3d + Jenkins + ArgoCD + SonarQube + Vault + Consul + PostgreSQL + OpenObserve)
+# Local DevOps Lab (k3d + Jenkins + ArgoCD + Vault + Consul + PostgreSQL + OpenObserve)
 
 Runs on **Linux** (Rootless Podman) and **macOS** (OrbStack). Sets up a complete local Kubernetes DevOps platform containing:
 
@@ -6,7 +6,6 @@ Runs on **Linux** (Rootless Podman) and **macOS** (OrbStack). Sets up a complete
 - **Local Container Registry** (`localhost:5000` from host, `k3d-dev-registry:5000` from cluster)
 - **Jenkins CI/CD** with dynamic Kubernetes Pod agents and Kaniko builders
 - **ArgoCD GitOps CD** for declarative Kubernetes deployment and drift reconciliation
-- **SonarQube** for automated code quality, security analysis, and Quality Gate enforcement
 - **OpenObserve** for cloud-native unified observability (logs, metrics, traces, and dashboards)
 - **PostgreSQL Latest** database service with automatic application user/database initialization
 - **HashiCorp Vault** (with Vault Agent Injector for secret injection)
@@ -63,7 +62,6 @@ export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
 helm repo add hashicorp   https://helm.releases.hashicorp.com
 helm repo add jenkins     https://charts.jenkins.io
 helm repo add argo        https://argoproj.github.io/argo-helm
-helm repo add sonarqube   https://SonarSource.github.io/helm-chart-sonarqube
 helm repo add openobserve https://charts.openobserve.ai
 helm repo add fluent      https://fluent.github.io/helm-charts
 helm repo update
@@ -111,7 +109,6 @@ All services run on **standard ports (80 / 443)** with **valid local TLS certifi
 | :--- | :--- | :--- |
 | **Jenkins CI/CD** | [https://jenkins.localhost](https://jenkins.localhost) | User: `admin` / Password: `admin123` |
 | **ArgoCD GitOps** | [https://argocd.localhost](https://argocd.localhost) | User: `admin` / Password: `admin123` |
-| **SonarQube** | [https://sonar.localhost](https://sonar.localhost) | User: `admin` / Password: `admin` |
 | **OpenObserve** | [https://openobserve.localhost](https://openobserve.localhost) | User: `admin@example.com` / Password: `DevOps_OpenObserve#2026` |
 | **PostgreSQL** | `postgres:5432` (k8s) / `localhost:5432` (host) | Superuser: `postgres` / `P0stgr3s_L4b_Adm!n#2026`<br>Ilmiya DB: `ilmiya_db` / `ilmiya_user` / `Ilm!y4_Db_P@ss2026#Secure`<br>Uwati DB: `uwati` / `uwati` / `Uwat!_Db_P@ss2026#Secure` |
 | **HashiCorp Vault** | [https://vault.localhost/ui](https://vault.localhost/ui) | Method: `Token` / Token: `root` |
@@ -187,9 +184,6 @@ make seed-jobs             # Seed pipeline jobs into Jenkins
 
 make deploy-argocd         # ArgoCD GitOps
 make deploy-argocd-apps    # Apply ArgoCD Application manifests
-
-make deploy-sonarqube      # SonarQube
-make setup-sonarqube-rules # Java/Kotlin profiles & 80% Quality Gate
 
 make deploy-openobserve             # OpenObserve observability
 make deploy-fluent-bit              # Fluent Bit log shipper

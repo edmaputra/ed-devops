@@ -11,8 +11,6 @@ spec:
         - consul.localhost
         - jenkins.localhost
         - argocd.localhost
-        - sonar.localhost
-        - sonarqube.localhost
         - ilmiya.localhost
         - openobserve.localhost
       secretName: local-wildcard-tls
@@ -57,26 +55,7 @@ spec:
                 name: argocd-server
                 port:
                   number: 80
-    - host: sonar.localhost
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: sonarqube
-                port:
-                  number: 9000
-    - host: sonarqube.localhost
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: sonarqube
-                port:
-                  number: 9000
+
     - host: ilmiya.localhost
       http:
         paths:

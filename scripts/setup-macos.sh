@@ -4,8 +4,8 @@
 # Supports: macOS (Apple Silicon arm64 / Intel x86_64) with OrbStack
 #
 # This script installs all required CLI tools and configures the environment
-# to run the full DevOps platform (k3d + Jenkins + ArgoCD + SonarQube +
-# Vault + Consul + PostgreSQL + OpenObserve) on macOS using OrbStack's
+# to run the full DevOps platform (k3d + Jenkins + ArgoCD + Vault + Consul +
+# PostgreSQL + OpenObserve) on macOS using OrbStack's
 # Docker-compatible socket (no Podman required).
 #
 # Prerequisites (manual):
@@ -163,7 +163,6 @@ info "Adding Helm chart repositories..."
 helm repo add hashicorp   https://helm.releases.hashicorp.com        2>/dev/null || true
 helm repo add jenkins     https://charts.jenkins.io                   2>/dev/null || true
 helm repo add argo        https://argoproj.github.io/argo-helm        2>/dev/null || true
-helm repo add sonarqube   https://SonarSource.github.io/helm-chart-sonarqube 2>/dev/null || true
 helm repo add openobserve https://charts.openobserve.ai               2>/dev/null || true
 helm repo add fluent      https://fluent.github.io/helm-charts        2>/dev/null || true
 helm repo update
@@ -191,7 +190,6 @@ echo ""
 echo "  Services will be available at:"
 echo "     https://jenkins.localhost   (admin / admin123)"
 echo "     https://argocd.localhost    (admin / admin123)"
-echo "     https://sonar.localhost     (admin / admin)"
 echo "     https://vault.localhost/ui  (token: root)"
 echo "     https://consul.localhost/ui"
 echo "     https://openobserve.localhost"
