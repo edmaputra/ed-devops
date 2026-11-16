@@ -29,7 +29,7 @@ spec:
       containers:
         - name: ilmiya-backend
           image: ilmiya-backend:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
               name: http

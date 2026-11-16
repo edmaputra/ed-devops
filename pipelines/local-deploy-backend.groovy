@@ -252,8 +252,19 @@ except Exception as e:
 
         if (params.TRIGGER_ROLLOUT) {
             stage('Update Deployment') {
-                echo "Image k3d-dev-registry:5000/${params.IMAGE_NAME}:${env.BUILD_NUMBER} published to local registry."
-                echo "ArgoCD / GitOps will detect or can be synced."
+                container('builder') {
+                    sh '''
+                    echo "==> Triggering rollout restart for ilmiya-backend..."
+                    TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)
+                    if [ -n "$TOKEN" ]; then
+                      curl -k -s -X PATCH -H "Authorization: Bearer $TOKEN" \
+                        -H "Content-Type: application/strategic-merge-patch+json" \
+                        https://kubernetes.default.svc/apis/apps/v1/namespaces/default/deployments/ilmiya-backend \
+                        -d "{\\"spec\\":{\\"template\\":{\\"metadata\\":{\\"annotations\\":{\\"kubectl.kubernetes.io/restartedAt\\":\\"$(date -Iseconds)\\"}}}}}"
+                      echo "[OK] Rollout restart triggered on Kubernetes."
+                    fi
+                    '''
+                }
             }
         }
     }
