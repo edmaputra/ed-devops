@@ -27,7 +27,7 @@ metadata:
 spec:
   containers:
     - name: builder
-      image: eclipse-temurin:25-jdk
+      image: k3d-dev-registry:5000/eclipse-temurin:25-jdk
       command: ['cat']
       tty: true
       securityContext:
@@ -71,7 +71,7 @@ spec:
           cpu: 1000m
           memory: 1024Mi
     - name: kaniko
-      image: gcr.io/kaniko-project/executor:debug
+      image: k3d-dev-registry:5000/kaniko:debug
       command: ['/busybox/cat']
       tty: true
       env:

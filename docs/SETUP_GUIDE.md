@@ -1,6 +1,6 @@
 # Complete Step-by-Step Setup Guide: Local Kubernetes DevOps Laboratory
 
-This guide explains in detail how the entire local DevOps platform is architected and built from scratch using **k3d**, **Rootless Podman**, **Jenkins**, **ArgoCD**, **SonarQube**, **PostgreSQL**, **HashiCorp Vault**, **HashiCorp Consul**, **mkcert Local TLS**, and **Traefik Ingress**.
+This guide explains in detail how the entire local DevOps platform is architected and built from scratch using **k3d**, **Rootless Podman**, **Jenkins**, **ArgoCD**, **PostgreSQL**, **HashiCorp Vault**, **HashiCorp Consul**, **mkcert Local TLS**, and **Traefik Ingress**.
 
 ---
 
@@ -18,7 +18,6 @@ graph TD
             subgraph K3sCluster [k3d Kubernetes Cluster: dev-cluster]
                 Traefik -->|https://jenkins.localhost| Jenkins[Jenkins Controller<br/>Port 8080]
                 Traefik -->|https://argocd.localhost| ArgoCD[ArgoCD Server<br/>Port 80]
-                Traefik -->|https://sonar.localhost| SonarQube[SonarQube Server<br/>Port 9000]
                 Traefik -->|https://openobserve.localhost| OpenObserve[OpenObserve<br/>Port 5080]
                 Traefik -->|https://vault.localhost| Vault[HashiCorp Vault<br/>Port 8200]
                 Traefik -->|https://consul.localhost| Consul[HashiCorp Consul<br/>Port 80]
@@ -27,7 +26,6 @@ graph TD
                 Apps -->|Database Connection| Postgres
                 
                 Jenkins -.->|Dynamic agent pods via Kaniko| K8sAgents[Kubernetes Build Agents]
-                K8sAgents -.->|Code Quality Scan| SonarQube
                 K8sAgents -.->|Push Images| Reg
                 
                 ArgoCD -.->|Sync & Reconcile Manifests| Apps
@@ -164,8 +162,6 @@ mkcert -cert-file certs/local-cert.pem -key-file certs/local-key.pem \
   consul.localhost \
   jenkins.localhost \
   argocd.localhost \
-  sonar.localhost \
-  sonarqube.localhost \
   ilmiya.localhost \
   "*.ilmiya.localhost" \
   openobserve.localhost
@@ -389,57 +385,7 @@ helm upgrade --install argocd argo/argo-cd -f helm/argocd/values.yaml
 
 ---
 
-### Step 6.5: SonarQube Code Quality & Security Platform
-Add repository:
-```bash
-helm repo add sonarqube https://SonarSource.github.io/helm-chart-sonarqube
-helm repo update
-```
-
-Configuration (`helm/sonarqube/values.yaml`):
-```yaml
-fullnameOverride: "sonarqube"
-edition: ""
-community:
-  enabled: true
-monitoringPasscode: "sonarPasscode123"
-initSysctl:
-  enabled: false
-initFs:
-  enabled: false
-resources:
-  requests:
-    cpu: "200m"
-    memory: "1.5Gi"
-  limits:
-    cpu: "1000m"
-    memory: "2.5Gi"
-jvmOpts: "-Xms512m -Xmx1024m"
-jvmCeOpts: "-Xms256m -Xmx512m"
-service:
-  type: ClusterIP
-  externalPort: 9000
-persistence:
-  enabled: false
-```
-
-Deploy:
-```bash
-helm upgrade --install sonarqube sonarqube/sonarqube -f helm/sonarqube/values.yaml
-```
-
-Configure Java/Kotlin Best Quality Profiles & 80% Coverage Quality Gate:
-```bash
-make setup-sonarqube-rules
-```
-This automatically configures:
-- **`Production Java`**: Extends `Sonar way` with Spring transaction bypass checks (`java:S2229`), singleton/prototype bean injection checks (`java:S6832`), `@Autowired` constructor rules (`java:S6829`), database password safety (`java:S2115`), `BigDecimal(double)` precision checks (`java:S2111`), `URL.equals/hashCode` DNS lookup hazards (`java:S2112`), and ReDoS regular expression protection (`java:S5852`).
-- **`Production Kotlin`**: Extends `Sonar way` with Kotlin coroutines & flow structured concurrency rules (`kotlin:S6306`, `kotlin:S6307`, `kotlin:S6309`, `kotlin:S6310`, `kotlin:S6311`), `Deferred` consumption (`kotlin:S6315`), hardcoded credentials (`kotlin:S2068`), plaintext password storage (`kotlin:S5344`), and cognitive complexity checks (`kotlin:S3776`).
-- **`Production Ready` Quality Gate**: Enforces `>= 80%` code coverage on both new and overall code, `<= 3%` duplicated lines, `0` new blocker/critical issues, and `100%` security hotspots reviewed.
-
----
-
-### Step 6.6: PostgreSQL Latest Database
+### Step 6.5: PostgreSQL Latest Database
 PostgreSQL Latest is packaged as a local Helm chart in `helm/postgres` and declarative Kubernetes manifests in `manifests/postgres`. It provides persistent storage via `local-path`, automated initialization of application databases and users (including `ilmiya_db` for `ilmiya` and `uwati` for `uwati`), and dual service aliases (`postgres` and `postgresql`).
 
 Configuration (`helm/postgres/values.yaml`):
@@ -490,7 +436,7 @@ make deploy-postgres
 
 ---
 
-### Step 6.7: Ingress for Platform Services
+### Step 6.6: Ingress for Platform Services
 Defined in `manifests/ingress/local-ingress.yaml`:
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -506,8 +452,6 @@ spec:
         - consul.localhost
         - jenkins.localhost
         - argocd.localhost
-        - sonar.localhost
-        - sonarqube.localhost
         - openobserve.localhost
       secretName: local-wildcard-tls
   rules:
@@ -551,26 +495,6 @@ spec:
                 name: argocd-server
                 port:
                   number: 80
-    - host: sonar.localhost
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: sonarqube
-                port:
-                  number: 9000
-    - host: sonarqube.localhost
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: sonarqube
-                port:
-                  number: 9000
 ```
 Apply:
 ```bash
@@ -579,7 +503,7 @@ kubectl apply -f manifests/ingress/local-ingress.yaml
 
 ---
 
-### Step 6.8: Grant Deployer Permissions to Jenkins Agents
+### Step 6.7: Grant Deployer Permissions to Jenkins Agents
 To allow Jenkins agent pods to create and update application workloads in the `default` namespace:
 
 ```bash
@@ -588,14 +512,13 @@ kubectl apply -f manifests/jenkins/jenkins-deployer-rbac.yaml
 
 ---
 
-### Step 6.9: Seed Centralized Local Deployment Pipelines
+### Step 6.8: Seed Centralized Local Deployment Pipelines
 To maintain total decoupling between application repositories and platform infrastructure, Jenkins uses centralized inline pipelines rather than reading `Jenkinsfile` from app repositories.
 
 The pipelines are stored under `pipelines/`:
 - `pipelines/local-deploy-backend.groovy` (Java / Kotlin Spring Boot Backend)
   - **`RUN_TESTS=true` (Default)**: Executes all Gradle unit and integration tests with Testcontainers. Fails if any test fails.
   - **Code Coverage Enforcement (`>= 80%`)**: Aggregates JaCoCo instruction and line coverage across all subprojects and automatically fails the build if code coverage falls below 80%.
-  - **`RUN_SONAR=true` (Default)**: Injects SonarQube Gradle plugin, binds JaCoCo aggregate XML coverage reports, and enforces SonarQube Quality Gate compliance (`sonar.qualitygate.wait=true`).
 - `pipelines/local-deploy-frontend.groovy` (Flutter Web Frontend)
 
 Seed or update these jobs in Jenkins at any time:
@@ -716,7 +639,6 @@ When deploying microservices to this lab:
 | :--- | :--- | :--- | :--- |
 | **Jenkins CI/CD** | HTTPS (443) | `https://jenkins.localhost` | `admin` / `admin123` |
 | **ArgoCD GitOps** | HTTPS (443) | `https://argocd.localhost` | `admin` / `admin123` |
-| **SonarQube** | HTTPS (443) | `https://sonar.localhost` | `admin` / `admin` |
 | **OpenObserve** | HTTPS (443) | `https://openobserve.localhost` | `admin@example.com` / `DevOps_OpenObserve#2026` |
 | **PostgreSQL** | TCP (5432) | `postgres:5432` (k8s) / `localhost:5432` (host) | Superuser: `postgres` / `P0stgr3s_L4b_Adm!n#2026`<br>Ilmiya: `ilmiya_db` / `ilmiya_user` / `Ilm!y4_Db_P@ss2026#Secure`<br>Uwati: `uwati` / `uwati` / `Uwat!_Db_P@ss2026#Secure` |
 | **HashiCorp Vault UI** | HTTPS (443) | `https://vault.localhost/ui/` | Token: `root` |

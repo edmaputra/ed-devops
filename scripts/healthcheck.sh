@@ -6,7 +6,7 @@ set -euo pipefail
 # Verifies:
 #   1. Kubernetes cluster & nodes
 #   2. Platform service Ingress routes & TLS certificates
-#   3. Service API health (SonarQube, Vault, OpenObserve, Consul, Jenkins, ArgoCD)
+#   3. Service API health (Vault, OpenObserve, Consul, Jenkins, ArgoCD)
 #   4. Database connectivity (PostgreSQL)
 #   5. Workload pod health across namespaces
 # ==============================================================================

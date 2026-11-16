@@ -11,7 +11,6 @@ This document outlines the architectural features, current capabilities, and str
 - **Rootless Podman + k3d (k3s)** with cgroup v2 delegation
 - **In-Cluster CI/CD Engine** (Jenkins with dynamic Kubernetes agent pods & Kaniko rootless image builds)
 - **GitOps Continuous Delivery** (ArgoCD with automated drift reconciliation)
-- **Code Quality & Security Governance** (SonarQube with strict 80% coverage quality gates)
 - **Enterprise Secret & Config Management** (HashiCorp Vault with Kubernetes Auth & Consul KV)
 - **Autonomous Resource Maintenance** (Scheduled build discarding, image pruning, and volume cleanup)
 - **Unified Observability & Telemetry** (OpenObserve standalone engine + Fluent Bit DaemonSet log & metric shipper)
@@ -23,7 +22,6 @@ graph TD
     subgraph K3sCluster [k3d Kubernetes Cluster: dev-cluster]
         Traefik --> Jenkins[Jenkins CI/CD]
         Traefik --> ArgoCD[ArgoCD GitOps]
-        Traefik --> SonarQube[SonarQube Quality Gate]
         Traefik --> OpenObserve[OpenObserve Unified Observability]
         Traefik --> Vault[HashiCorp Vault]
         Traefik --> Consul[HashiCorp Consul]
@@ -47,7 +45,6 @@ graph TD
 | **Ingress & Networking** | Traefik Ingress (Ports 80/443), mkcert TLS | Gateway API / Traefik Ingress | ✅ Implemented |
 | **CI Engine** | Jenkins JCasC + Ephemeral Agent Pods | Jenkins + Shared Library | ✅ Implemented |
 | **Build Optimization** | Remote Kaniko Caching, Gradle & Flutter PVC Caches | Distributed Caching | ✅ Implemented |
-| **Code Quality** | SonarQube + 80% coverage Quality Gate | SonarQube + Automated Rule Enforcement | ✅ Implemented |
 | **GitOps CD** | ArgoCD Raw Manifests | ArgoCD + Kustomize Overlays + Image Updater | ⚪ Planned |
 | **Secret Management** | Vault KV-v2 + K8s Auth Injector | Vault Auto-rotation & Dynamic DB Credentials | ✅ Implemented |
 | **Observability** | OpenObserve + Fluent Bit (Cluster Logs & Metrics) | Spring Boot Micrometer Dashboards & Alert Rules | ✅ Implemented |
@@ -73,9 +70,6 @@ graph TD
 3. **JUnit Test Report Analytics** (✅ Completed):
    - Integrated `junit testResults: '**/build/test-results/test/*.xml'` into backend deployment pipeline.
    - Exposes test execution trends, pass/fail ratios, and failure stack traces directly on the Jenkins dashboard.
-4. **Credential Decoupling** (✅ Completed):
-   - Automated registration of SonarQube tokens into Jenkins Credentials store (`sonar-token`) via `setup-sonarqube-rules.sh`.
-   - Pipelines bind credentials dynamically via `withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')])`.
 
 ---
 
@@ -87,7 +81,7 @@ graph TD
    - Automated script `scripts/healthcheck.sh` that validates:
      - Kubernetes cluster and node readiness
      - Ingress routes and TLS certificates (`*.localhost`)
-     - System APIs: SonarQube (`UP`), Vault (unsealed), Consul (leader elected), OpenObserve (`ok`), Jenkins (HTTP 200), ArgoCD (HTTP 200)
+     - System APIs: Vault (unsealed), Consul (leader elected), OpenObserve (`ok`), Jenkins (HTTP 200), ArgoCD (HTTP 200)
      - Application Ingress & Spring Boot Actuator status
      - PostgreSQL database ping and user connections
      - Pod health & abnormal restart detection across all namespaces

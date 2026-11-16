@@ -125,7 +125,6 @@ If you skipped the setup script, add repos manually:
 helm repo add hashicorp   https://helm.releases.hashicorp.com
 helm repo add jenkins     https://charts.jenkins.io
 helm repo add argo        https://argoproj.github.io/argo-helm
-helm repo add sonarqube   https://SonarSource.github.io/helm-chart-sonarqube
 helm repo add openobserve https://charts.openobserve.ai
 helm repo add fluent      https://fluent.github.io/helm-charts
 helm repo update

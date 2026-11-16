@@ -10,10 +10,22 @@ OPENOBSERVE_URL="${OPENOBSERVE_URL:-https://openobserve.localhost}"
 OPENOBSERVE_USER="${OPENOBSERVE_USER:-admin@example.com}"
 OPENOBSERVE_PASS="${OPENOBSERVE_PASS:-DevOps_OpenObserve#2026}"
 
+echo "==> Waiting for OpenObserve pod to be ready..."
+if kubectl get statefulset openobserve >/dev/null 2>&1; then
+  kubectl rollout status statefulset/openobserve --timeout=10m
+fi
+
 echo "==> Checking OpenObserve health at ${OPENOBSERVE_URL}..."
+MAX_RETRIES=60
+RETRY_COUNT=0
 until curl -k -s -f "${OPENOBSERVE_URL}/healthz" > /dev/null 2>&1; do
-  echo "Waiting for OpenObserve to become ready..."
-  sleep 2
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
+    echo "ERROR: Timed out waiting for OpenObserve endpoint (${OPENOBSERVE_URL}/healthz) to respond."
+    exit 1
+  fi
+  echo "OpenObserve is starting up... waiting 5s (attempt ${RETRY_COUNT}/${MAX_RETRIES})"
+  sleep 5
 done
 
 echo "==> OpenObserve is healthy. Checking existing dashboards..."
