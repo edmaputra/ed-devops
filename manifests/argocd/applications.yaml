@@ -25,9 +25,10 @@ metadata:
   name: ilmiya-backend
   namespace: default
   annotations:
-    argocd.image-updater.argoproj.io/image-list: backend=k3d-dev-registry:5000/ilmiya-backend
-    argocd.image-updater.argoproj.io/backend.update-strategy: latest
-    argocd.image-updater.argoproj.io/write-back-method: argocd
+    argocd-image-updater.argoproj.io/image-list: backend=k3d-dev-registry:5000/ilmiya-backend
+    argocd-image-updater.argoproj.io/backend.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/backend.kustomize.image-name: ilmiya-backend
+    argocd-image-updater.argoproj.io/write-back-method: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -50,9 +51,10 @@ metadata:
   name: ilmiya-frontend
   namespace: default
   annotations:
-    argocd.image-updater.argoproj.io/image-list: frontend=k3d-dev-registry:5000/ilmiya-frontend
-    argocd.image-updater.argoproj.io/frontend.update-strategy: latest
-    argocd.image-updater.argoproj.io/write-back-method: argocd
+    argocd-image-updater.argoproj.io/image-list: frontend=k3d-dev-registry:5000/ilmiya-frontend
+    argocd-image-updater.argoproj.io/frontend.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/frontend.kustomize.image-name: ilmiya-frontend
+    argocd-image-updater.argoproj.io/write-back-method: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
