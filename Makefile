@@ -157,6 +157,7 @@ deploy-apps:
 
 deploy-argocd-apps:
 	kubectl apply -f manifests/argocd/applications.yaml
+	kubectl apply -f manifests/argocd/image-updater.yaml
 
 start:
 	@echo "Starting local registry and k3d cluster..."
