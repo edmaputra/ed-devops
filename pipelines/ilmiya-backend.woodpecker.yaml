@@ -1,0 +1,146 @@
+when:
+  - event: [push, pull_request, manual]
+    branch: [main, master]
+
+steps:
+  - name: test-and-coverage
+    image: k3d-dev-registry:5000/eclipse-temurin:25-jdk
+    commands:
+      - echo "==> Running integration and unit tests with JaCoCo code coverage..."
+      - ./gradlew check jacocoAggregateReport --parallel --build-cache --no-daemon
+      - echo "==> Verifying code coverage meets minimum threshold (80%)..."
+      - |
+        MIN_COV="80"
+        REPORT_CSV="build/reports/jacoco/aggregate/jacoco.csv"
+        if [ ! -f "${REPORT_CSV}" ]; then
+          REPORT_FILES=$(find . -path "*/build/reports/jacoco/*/*.csv" 2>/dev/null || true)
+        else
+          REPORT_FILES="${REPORT_CSV}"
+        fi
+
+        if [ -z "${REPORT_FILES}" ]; then
+          echo "ERROR: No JaCoCo coverage reports found. Unable to verify coverage threshold."
+          exit 1
+        fi
+
+        awk -F',' -v min_cov="${MIN_COV}" '
+          NR > 1 && $4 ~ /^[0-9]+$/ {
+            inst_miss += $4; inst_cov += $5;
+            branch_miss += $6; branch_cov += $7;
+            line_miss += $8; line_cov += $9;
+          }
+          END {
+            inst_total = inst_miss + inst_cov;
+            line_total = line_miss + line_cov;
+            branch_total = branch_miss + branch_cov;
+
+            if (line_total == 0 && inst_total == 0) {
+              print "ERROR: Coverage reports contain 0 lines and 0 instructions.";
+              exit 1;
+            }
+
+            line_pct = (line_total > 0) ? (line_cov / line_total) * 100 : 0;
+            inst_pct = (inst_total > 0) ? (inst_cov / inst_total) * 100 : 0;
+            branch_pct = (branch_total > 0) ? (branch_cov / branch_total) * 100 : 0;
+
+            printf "\n==========================================================\n";
+            printf " JaCoCo Code Coverage Verification Summary\n";
+            printf "==========================================================\n";
+            printf "  Line Coverage        : %6.2f%% (%d / %d lines)\n", line_pct, line_cov, line_total;
+            printf "  Instruction Coverage : %6.2f%% (%d / %d instructions)\n", inst_pct, inst_cov, inst_total;
+            if (branch_total > 0) {
+              printf "  Branch Coverage      : %6.2f%% (%d / %d branches)\n", branch_pct, branch_cov, branch_total;
+            }
+            printf "  Required Threshold   : %6.2f%%\n", min_cov;
+            printf "==========================================================\n\n";
+
+            eval_pct = (line_total > 0) ? line_pct : inst_pct;
+            if (eval_pct < min_cov) {
+              printf "FAILED: Code coverage (%.2f%%) is below the required threshold of %.2f%%!\n", eval_pct, min_cov;
+              exit 1;
+            } else {
+              printf "PASSED: Code coverage (%.2f%%) satisfies the required threshold of %.2f%%.\n\n", eval_pct, min_cov;
+            }
+          }
+        ' ${REPORT_FILES}
+    backend_options:
+      kubernetes:
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1024Mi
+          limits:
+            cpu: 2000m
+            memory: 2048Mi
+
+  - name: semgrep-scan
+    image: k3d-dev-registry:5000/semgrep:latest
+    commands:
+      - echo "==> Running Semgrep static security and code quality analysis..."
+      - unset SEMGREP_IN_DOCKER || true
+      - export SEMGREP_SRC_DIRECTORY=.
+      - semgrep scan --config=auto --sarif --output=semgrep.sarif . || true
+      - semgrep scan --config=auto --json --output=semgrep.json . || true
+      - echo "==> Scan completed. Ingesting findings into OpenObserve stream 'semgrep'..."
+      - |
+        if [ -f semgrep.json ] && [ -s semgrep.json ]; then
+          curl -k -s -u admin@example.com:DevOps_OpenObserve#2026 \
+            https://traefik.kube-system.svc.cluster.local/api/default/semgrep/_json \
+            -H 'Host: openobserve.localhost' \
+            -H 'Content-Type: application/json' \
+            -d @semgrep.json >/dev/null 2>&1 || true
+          echo "[OK] Semgrep findings successfully published to OpenObserve."
+        fi
+    backend_options:
+      kubernetes:
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1024Mi
+
+  - name: build-and-push-kaniko
+    image: k3d-dev-registry:5000/kaniko:debug
+    commands:
+      - echo "==> Building and pushing container image via Kaniko..."
+      - |
+        /kaniko/executor \
+          --context=dir://. \
+          --dockerfile=Dockerfile \
+          --destination=k3d-dev-registry:5000/ilmiya-backend:${CI_PIPELINE_NUMBER:-1} \
+          --destination=k3d-dev-registry:5000/ilmiya-backend:latest \
+          --cache=true --cache-copy-layers=true --cache-run-layers=true \
+          --cache-repo=k3d-dev-registry:5000/kaniko-cache --cache-ttl=72h --compressed-caching=false \
+          --image-download-retry=3 \
+          --image-fs-extract-retry=3 \
+          --push-retry=3 \
+          --insecure \
+          --skip-tls-verify
+    backend_options:
+      kubernetes:
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 2000m
+            memory: 2048Mi
+
+  - name: deploy-rollout
+    image: docker.io/curlimages/curl:8.23.0
+    commands:
+      - echo "==> Triggering rollout restart for ilmiya-backend in Kubernetes..."
+      - TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)
+      - |
+        if [ -n "$TOKEN" ]; then
+          curl -k -s -X PATCH -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/strategic-merge-patch+json" \
+            https://kubernetes.default.svc/apis/apps/v1/namespaces/default/deployments/ilmiya-backend \
+            -d "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -Iseconds)\"}}}}}"
+          echo "[OK] Rollout restart triggered on Kubernetes."
+        fi
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-deployer

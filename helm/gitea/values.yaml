@@ -1,0 +1,31 @@
+fullnameOverride: "gitea"
+
+image:
+  repository: gitea/gitea
+  tag: latest
+  pullPolicy: IfNotPresent
+
+domain: "gitea.localhost"
+rootUrl: "https://gitea.localhost/"
+
+admin:
+  username: "gitea_admin"
+  password: "DevOps_Gitea#2026"
+  email: "admin@localhost"
+
+service:
+  httpPort: 3000
+  sshPort: 2222
+
+persistence:
+  enabled: true
+  storageClass: "local-path"
+  size: "3Gi"
+
+resources:
+  requests:
+    cpu: "50m"
+    memory: "128Mi"
+  limits:
+    cpu: "1000m"
+    memory: "512Mi"

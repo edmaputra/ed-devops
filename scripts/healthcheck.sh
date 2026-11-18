@@ -6,7 +6,7 @@ set -euo pipefail
 # Verifies:
 #   1. Kubernetes cluster & nodes
 #   2. Platform service Ingress routes & TLS certificates
-#   3. Service API health (Vault, OpenObserve, Consul, Jenkins, ArgoCD)
+#   3. Service API health (Vault, OpenObserve, Consul, Woodpecker CI, Gitea)
 #   4. Database connectivity (PostgreSQL)
 #   5. Workload pod health across namespaces
 # ==============================================================================
@@ -67,7 +67,7 @@ echo ""
 echo -e "${BOLD}2. Checking Ingress Routes & API Health...${NC}"
 
 # Semgrep (Pipeline-integrated SAST)
-report_pass "Semgrep integrated in Jenkins pipeline (https://jenkins.localhost)"
+report_pass "Semgrep integrated in Woodpecker CI pipeline (https://woodpecker.localhost)"
 
 # HashiCorp Vault
 VAULT_HEALTH=$(curl -k -s --max-time 5 https://vault.localhost/v1/sys/health 2>/dev/null || true)
@@ -96,20 +96,20 @@ else
   report_fail "OpenObserve healthz failed (status: '${OO_STATUS}')"
 fi
 
-# Jenkins
-JENKINS_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" --max-time 5 -L https://jenkins.localhost/login 2>/dev/null || true)
-if [[ "${JENKINS_CODE}" == "200" ]]; then
-  report_pass "Jenkins Web UI is accessible (HTTP ${JENKINS_CODE})"
+# Woodpecker CI
+WOODPECKER_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" --max-time 5 -L https://woodpecker.localhost 2>/dev/null || true)
+if [[ "${WOODPECKER_CODE}" == "200" ]]; then
+  report_pass "Woodpecker CI Web UI is accessible (HTTP ${WOODPECKER_CODE})"
 else
-  report_fail "Jenkins Web UI returned HTTP ${JENKINS_CODE}"
+  report_fail "Woodpecker CI Web UI returned HTTP ${WOODPECKER_CODE}"
 fi
 
-# ArgoCD
-ARGOCD_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" --max-time 5 -L https://argocd.localhost 2>/dev/null || true)
-if [[ "${ARGOCD_CODE}" == "200" ]]; then
-  report_pass "ArgoCD Web UI is accessible (HTTP ${ARGOCD_CODE})"
+# Gitea
+GITEA_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" --max-time 5 -L https://gitea.localhost 2>/dev/null || true)
+if [[ "${GITEA_CODE}" == "200" ]]; then
+  report_pass "Gitea Git Forge is accessible (HTTP ${GITEA_CODE})"
 else
-  report_fail "ArgoCD Web UI returned HTTP ${ARGOCD_CODE}"
+  report_fail "Gitea Git Forge returned HTTP ${GITEA_CODE}"
 fi
 
 # Application Frontend

@@ -9,8 +9,8 @@ spec:
     - hosts:
         - vault.localhost
         - consul.localhost
-        - jenkins.localhost
-        - argocd.localhost
+        - woodpecker.localhost
+        - gitea.localhost
         - ilmiya.localhost
         - openobserve.localhost
       secretName: local-wildcard-tls
@@ -35,26 +35,26 @@ spec:
                 name: consul-ui
                 port:
                   number: 80
-    - host: jenkins.localhost
+    - host: woodpecker.localhost
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: jenkins
-                port:
-                  number: 8080
-    - host: argocd.localhost
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: argocd-server
+                name: woodpecker-server
                 port:
                   number: 80
+    - host: gitea.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gitea-http
+                port:
+                  number: 3000
 
     - host: ilmiya.localhost
       http:

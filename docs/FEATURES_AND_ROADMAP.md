@@ -9,8 +9,8 @@ This document outlines the architectural features, current capabilities, and str
 `ed-devops` is an enterprise-grade, rootless-compatible local DevOps and GitOps platform. It simulates real-world production engineering environments on a local workstation using lightweight, open-source technologies:
 - **Zero-Warning Local TLS** (`mkcert`) on **Standard Ports (`80` / `443`)**
 - **Rootless Podman + k3d (k3s)** with cgroup v2 delegation
-- **In-Cluster CI/CD Engine** (Jenkins with dynamic Kubernetes agent pods & Kaniko rootless image builds)
-- **GitOps Continuous Delivery** (ArgoCD with automated drift reconciliation)
+- **In-Cluster CI/CD Engine** (Woodpecker CI with dynamic Kubernetes agent pods & Kaniko rootless image builds)
+- **Self-Hosted Git Forge** (Gitea with automated webhooks and OAuth2)
 - **Enterprise Secret & Config Management** (HashiCorp Vault with Kubernetes Auth & Consul KV)
 - **Autonomous Resource Maintenance** (Scheduled build discarding, image pruning, and volume cleanup)
 - **Unified Observability & Telemetry** (OpenObserve standalone engine + Fluent Bit DaemonSet log & metric shipper)
@@ -20,17 +20,18 @@ graph TD
     User([Developer / Browser]) -->|HTTPS Port 443 / HTTP Port 80| Traefik[Traefik Ingress Controller]
     
     subgraph K3sCluster [k3d Kubernetes Cluster: dev-cluster]
-        Traefik --> Jenkins[Jenkins CI/CD]
-        Traefik --> ArgoCD[ArgoCD GitOps]
+        Traefik --> Woodpecker[Woodpecker CI]
+        Traefik --> Gitea[Gitea Forge]
         Traefik --> OpenObserve[OpenObserve Unified Observability]
         Traefik --> Vault[HashiCorp Vault]
         Traefik --> Consul[HashiCorp Consul]
         Traefik --> Apps[Applications: Backend & Frontend]
         
         FluentBit[Fluent Bit DaemonSet] -->|Container Logs & Host Metrics| OpenObserve
-        Jenkins -->|Ephemeral Pods| Kaniko[Kaniko Builder]
+        Gitea -->|Webhooks & OAuth| Woodpecker
+        Woodpecker -->|Kubernetes Pods| Kaniko[Kaniko Builder]
         Kaniko -->|Push Images| Registry[Local Registry :5000]
-        ArgoCD -->|Reconcile State| Apps
+        Woodpecker -->|Continuous Delivery Rollout| Apps
         Vault -->|Inject Secrets| Apps
     end
 ```
@@ -43,9 +44,8 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | **Container Engine** | Rootless Podman 4/5 + k3d | Rootless Podman + k3d | ✅ Implemented |
 | **Ingress & Networking** | Traefik Ingress (Ports 80/443), mkcert TLS | Gateway API / Traefik Ingress | ✅ Implemented |
-| **CI Engine** | Jenkins JCasC + Ephemeral Agent Pods | Jenkins + Shared Library | ✅ Implemented |
-| **Build Optimization** | Remote Kaniko Caching, Gradle & Flutter PVC Caches | Distributed Caching | ✅ Implemented |
-| **GitOps CD** | ArgoCD Raw Manifests | ArgoCD + Kustomize Overlays + Image Updater | ⚪ Planned |
+| **CI/CD Engine** | Woodpecker CI + Kubernetes Backend Agents | Declarative Pipelines & Matrix Builds | ✅ Implemented |
+| **Git Forge & Auth** | Gitea (OAuth2 & Webhooks) | Multi-org & Team Access Control | ✅ Implemented |
 | **Secret Management** | Vault KV-v2 + K8s Auth Injector | Vault Auto-rotation & Dynamic DB Credentials | ✅ Implemented |
 | **Observability** | OpenObserve + Fluent Bit (Cluster Logs & Metrics) | Spring Boot Micrometer Dashboards & Alert Rules | ✅ Implemented |
 | **Storage Lifecycle** | Autonomous Build & Image Cleanup CronJob | Autonomous Cleanup + Metrics Alerting | ✅ Implemented |

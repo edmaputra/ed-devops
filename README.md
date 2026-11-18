@@ -1,11 +1,11 @@
-# Local DevOps Lab (k3d + Jenkins + ArgoCD + Vault + Consul + PostgreSQL + OpenObserve)
+# Local DevOps Lab (k3d + Woodpecker CI + Gitea + Vault + Consul + PostgreSQL + OpenObserve)
 
 Runs on **Linux** (Rootless Podman) and **macOS** (OrbStack). Sets up a complete local Kubernetes DevOps platform containing:
 
 - **k3d (k3s in Docker/Podman)** with built-in Traefik Ingress Controller
 - **Local Container Registry** (`localhost:5000` from host, `k3d-dev-registry:5000` from cluster)
-- **Jenkins CI/CD** with dynamic Kubernetes Pod agents and Kaniko builders
-- **ArgoCD GitOps CD** for declarative Kubernetes deployment and drift reconciliation
+- **Woodpecker CI/CD** with dynamic Kubernetes Pod agents and Kaniko builders
+- **Gitea Git Forge** for self-hosted Git repository hosting, webhooks, and OAuth2
 - **OpenObserve** for cloud-native unified observability (logs, metrics, traces, and dashboards)
 - **PostgreSQL Latest** database service with automatic application user/database initialization
 - **HashiCorp Vault** (with Vault Agent Injector for secret injection)
@@ -60,8 +60,7 @@ export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
 
 # Step 3 — Add Helm repositories
 helm repo add hashicorp   https://helm.releases.hashicorp.com
-helm repo add jenkins     https://charts.jenkins.io
-helm repo add argo        https://argoproj.github.io/argo-helm
+helm repo add woodpecker  https://woodpecker-ci.org/
 helm repo add openobserve https://charts.openobserve.ai
 helm repo add fluent      https://fluent.github.io/helm-charts
 helm repo update
@@ -107,8 +106,8 @@ All services run on **standard ports (80 / 443)** with **valid local TLS certifi
 
 | Service | Local URL | Credentials / Tokens |
 | :--- | :--- | :--- |
-| **Jenkins CI/CD** | [https://jenkins.localhost](https://jenkins.localhost) | User: `admin` / Password: `admin123` |
-| **ArgoCD GitOps** | [https://argocd.localhost](https://argocd.localhost) | User: `admin` / Password: `admin123` |
+| **Woodpecker CI** | [https://woodpecker.localhost](https://woodpecker.localhost) | Login via Gitea OAuth2 |
+| **Gitea Forge** | [https://gitea.localhost](https://gitea.localhost) | User: `gitea_admin` / Password: `DevOps_Gitea#2026` |
 | **OpenObserve** | [https://openobserve.localhost](https://openobserve.localhost) | User: `admin@example.com` / Password: `DevOps_OpenObserve#2026` |
 | **PostgreSQL** | `postgres:5432` (k8s) / `localhost:5432` (host) | Superuser: `postgres` / `P0stgr3s_L4b_Adm!n#2026`<br>Ilmiya DB: `ilmiya_db` / `ilmiya_user` / `Ilm!y4_Db_P@ss2026#Secure`<br>Uwati DB: `uwati` / `uwati` / `Uwat!_Db_P@ss2026#Secure` |
 | **HashiCorp Vault** | [https://vault.localhost/ui](https://vault.localhost/ui) | Method: `Token` / Token: `root` |
@@ -178,12 +177,10 @@ make setup-consul-config   # Seed Consul KV config
 
 make deploy-postgres       # PostgreSQL
 
-make deploy-jenkins        # Jenkins CI/CD
-make deploy-jenkins-rbac   # RBAC for dynamic agent pods
-make seed-jobs             # Seed pipeline jobs into Jenkins
-
-make deploy-argocd         # ArgoCD GitOps
-make deploy-argocd-apps    # Apply ArgoCD Application manifests
+make deploy-gitea          # Gitea Git Forge
+make deploy-woodpecker-rbac# RBAC for Woodpecker pipeline agent pods
+make setup-gitea-woodpecker# Configure Gitea OAuth, secret, and seed repos
+make deploy-woodpecker     # Woodpecker CI/CD
 
 make deploy-openobserve             # OpenObserve observability
 make deploy-fluent-bit              # Fluent Bit log shipper
@@ -198,7 +195,7 @@ make deploy-ingress        # Apply Traefik Ingress rules
 # Lint: Helm, YAML, shell scripts, Kubernetes manifests
 make lint
 
-# Prune Jenkins builds, container images, and volumes
+# Prune dangling/unused container images and volumes
 make cleanup-storage
 
 # Deploy the scheduled autonomous cleanup CronJob to Kubernetes
@@ -213,27 +210,16 @@ make setup-macos
 
 ---
 
-## Autonomous Storage & Build Cleanup Mechanism
+## Autonomous Storage Cleanup Mechanism
 
-To prevent disk saturation and continuously reclaim storage, the platform includes a multi-layered autonomous cleanup architecture:
+To prevent disk saturation and continuously reclaim storage, the platform includes an autonomous cleanup architecture:
 
-1. **Job-Level Build Discarder (`logRotator`)**:
-   - `deploy-ilmiya-backend` and `deploy-ilmiya-frontend` pipelines are configured with `buildDiscarder` to automatically retain only the **10 most recent builds** (max age **2 days**, max **5 artifact runs**).
-
-2. **Jenkins Global Build Discarder (JCasC)**:
-   - Configured in [helm/jenkins/values.yaml](helm/jenkins/values.yaml) via Jenkins Configuration as Code (`SimpleGlobalBuildDiscarderStrategy`), enforcing a global safety limit on all jobs.
-
-3. **Scheduled Jenkins Maintenance Pipeline (`system-storage-cleanup`)**:
-   - Seeded automatically via `make seed-jobs` from [pipelines/autonomous-storage-cleanup.groovy](pipelines/autonomous-storage-cleanup.groovy).
-   - Runs automatically on a daily cron schedule (`H 2 * * *`) or manually with parameter overrides (`MAX_BUILDS_TO_KEEP`, `DAYS_TO_KEEP`, `IMAGE_RETENTION_HOURS`, etc.).
-   - Prunes build records across all jobs and connects to the container engine socket to prune dangling images, unreferenced images older than 72 hours, stopped containers, and unattached volumes.
-
-4. **Kubernetes Scheduled CronJob (`jenkins-storage-cleanup`)**:
-   - Declared in [manifests/jenkins/jenkins-storage-cleanup-cronjob.yaml](manifests/jenkins/jenkins-storage-cleanup-cronjob.yaml) and deployed via `make deploy-cleanup-cronjob`.
+1. **Kubernetes Scheduled CronJob (`woodpecker-storage-cleanup`)**:
+   - Declared in [manifests/woodpecker/woodpecker-storage-cleanup-cronjob.yaml](manifests/woodpecker/woodpecker-storage-cleanup-cronjob.yaml) and deployed via `make deploy-cleanup-cronjob`.
    - Runs autonomously in the cluster daily at `02:00 UTC` without requiring external triggers.
+   - Connects to the container engine socket to prune dangling images, stopped containers, and unattached volumes.
    - On **macOS**, `make deploy-cleanup-cronjob` automatically patches the socket path to `/var/run/docker.sock` (OrbStack).
 
-5. **Manual CLI Execution (`make cleanup-storage`)**:
-   - Run [scripts/cleanup-storage.sh](scripts/cleanup-storage.sh) anytime via `make cleanup-storage` to instantly prune builds, container images, volumes, and k3d CRI containerd cache.
+2. **Manual CLI Execution (`make cleanup-storage`)**:
+   - Run [scripts/cleanup-storage.sh](scripts/cleanup-storage.sh) anytime via `make cleanup-storage` to instantly prune container images, volumes, and k3d CRI containerd cache.
    - Auto-detects `podman` (Linux) or `docker` (macOS/OrbStack).
-
