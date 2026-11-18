@@ -162,9 +162,9 @@ deploy-argocd-apps:
 start:
 	@echo "Starting local registry and k3d cluster..."
 ifeq ($(OS),Darwin)
-	@docker start k3d-dev-registry || true
 	@docker start k3d-dev-cluster-server-0 || true
 	@docker start k3d-dev-cluster-serverlb >/dev/null 2>&1 || true
+	@docker start k3d-dev-registry || true
 	@if docker ps -q -f name=k3d-dev-cluster-serverlb | grep -q .; then \
 		for i in $$(seq 1 10); do \
 			docker exec k3d-dev-cluster-serverlb nginx -s reload >/dev/null 2>&1 && break || sleep 1; \
@@ -172,9 +172,9 @@ ifeq ($(OS),Darwin)
 	fi
 else
 	@test -S /run/user/$$(id -u)/podman/podman.sock || systemctl --user restart podman.socket || true
-	@podman start k3d-dev-registry || true
 	@podman start k3d-dev-cluster-server-0 || true
 	@podman start k3d-dev-cluster-serverlb >/dev/null 2>&1 || true
+	@podman start k3d-dev-registry || true
 	@if podman ps -q -f name=k3d-dev-cluster-serverlb | grep -q .; then \
 		for i in $$(seq 1 10); do \
 			podman exec k3d-dev-cluster-serverlb nginx -s reload >/dev/null 2>&1 && break || sleep 1; \
