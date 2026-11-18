@@ -121,7 +121,7 @@ else
 fi
 
 # Application Backend Actuator
-BACKEND_HEALTH=$(curl -k -s --max-time 5 https://ilmiya.localhost/actuator/health 2>/dev/null | jq -r '.status // empty' || true)
+BACKEND_HEALTH=$(curl -k -s --max-time 5 https://ilmiya.localhost/actuator/health 2>/dev/null | jq -r '.status // empty' 2>/dev/null || true)
 if [[ "${BACKEND_HEALTH}" == "UP" ]]; then
   report_pass "Ilmiya Backend Spring Boot Actuator is UP"
 elif [[ -n "${BACKEND_HEALTH}" ]]; then
