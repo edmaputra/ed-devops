@@ -18,23 +18,25 @@ steps:
       - woodpecker-gradle-cache:/root/.gradle
     commands:
       - echo "==> Running integration and unit tests with JaCoCo code coverage..."
-      - ./gradlew check jacocoAggregateReport --parallel --build-cache --no-daemon
+      - export GRADLE_OPTS="-Dorg.gradle.jvmargs='-Xmx2048m -XX:+UseG1GC' -Dorg.gradle.workers.max=2"
+      - ./gradlew check jacocoAggregateReport --max-workers=2 --parallel --build-cache --no-daemon
       - echo "==> Verifying code coverage meets minimum threshold (80%)..."
       - |
         MIN_COV="80"
         REPORT_CSV="build/reports/jacoco/aggregate/jacoco.csv"
-        if [ ! -f "${REPORT_CSV}" ]; then
-          REPORT_FILES=$(find . -path "*/build/reports/jacoco/*/*.csv" 2>/dev/null || true)
+        if [ ! -f "$REPORT_CSV" ]; then
+          REPORT_FILES=$(find . -name "*.csv" -path "*/reports/jacoco/*" 2>/dev/null | tr '\n' ' ')
         else
-          REPORT_FILES="${REPORT_CSV}"
+          REPORT_FILES="$REPORT_CSV"
         fi
 
-        if [ -z "${REPORT_FILES}" ]; then
+        if [ -z "$REPORT_FILES" ]; then
           echo "ERROR: No JaCoCo coverage reports found. Unable to verify coverage threshold."
           exit 1
         fi
 
-        awk -F',' -v min_cov="${MIN_COV}" '
+        echo "==> Verifying JaCoCo code coverage from: $REPORT_FILES"
+        awk -F',' -v min_cov="$MIN_COV" '
           NR > 1 && $4 ~ /^[0-9]+$/ {
             inst_miss += $4; inst_cov += $5;
             branch_miss += $6; branch_cov += $7;
@@ -73,16 +75,16 @@ steps:
               printf "PASSED: Code coverage (%.2f%%) satisfies the required threshold of %.2f%%.\n\n", eval_pct, min_cov;
             }
           }
-        ' ${REPORT_FILES}
+        ' $REPORT_FILES
     backend_options:
       kubernetes:
         resources:
           requests:
-            cpu: 500m
-            memory: 1024Mi
-          limits:
-            cpu: 2000m
+            cpu: 1000m
             memory: 2048Mi
+          limits:
+            cpu: 4000m
+            memory: 5120Mi
 
   - name: semgrep-scan
     image: k3d-dev-registry:5000/semgrep:latest
@@ -124,8 +126,9 @@ steps:
           --dockerfile=Dockerfile \
           --destination=k3d-dev-registry:5000/ilmiya-backend:${CI_PIPELINE_NUMBER:-1} \
           --destination=k3d-dev-registry:5000/ilmiya-backend:latest \
-          --cache=true --cache-copy-layers=true --cache-run-layers=true \
+          --cache=true --cache-copy-layers=true \
           --cache-repo=k3d-dev-registry:5000/kaniko-cache --cache-ttl=72h --compressed-caching=false \
+          --snapshot-mode=redo \
           --image-download-retry=3 \
           --image-fs-extract-retry=3 \
           --push-retry=3 \
@@ -135,11 +138,11 @@ steps:
       kubernetes:
         resources:
           requests:
-            cpu: 200m
-            memory: 512Mi
+            cpu: 500m
+            memory: 1024Mi
           limits:
             cpu: 2000m
-            memory: 2048Mi
+            memory: 4096Mi
 
   - name: deploy-rollout
     image: docker.io/curlimages/curl:8.23.0

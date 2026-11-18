@@ -149,6 +149,33 @@ seed_repo() {
     fi
   fi
 
+  # Patch Dockerfile if it runs Java/Gradle without disabling hsperfdata (prevents Kaniko snapshot race condition)
+  local dockerfile_check
+  dockerfile_check=$(curl -k -s -u "${GITEA_USER}:${GITEA_PASS}" "${GITEA_URL}/api/v1/repos/${GITEA_USER}/${repo_name}/contents/Dockerfile")
+  local df_sha
+  df_sha=$(echo "${dockerfile_check}" | jq -r '.sha // empty')
+  if [[ -n "${df_sha}" ]]; then
+    local df_content
+    df_content=$(echo "${dockerfile_check}" | jq -r '.content // empty' | tr -d '\n' | base64 -d 2>/dev/null || true)
+    if [[ "${df_content}" == *"eclipse-temurin"* && "${df_content}" != *"JAVA_TOOL_OPTIONS"* ]]; then
+      echo "Patching Dockerfile in ${repo_name} to disable hsperfdata..."
+      local patched_df
+      patched_df=$(echo "${df_content}" | sed 's|WORKDIR /workspace|WORKDIR /workspace\n\n# Disable JVM perfdata to prevent transient /tmp/hsperfdata race conditions in container snapshotters\nENV JAVA_TOOL_OPTIONS="-XX:-UsePerfData"|g')
+      local patched_df_b64
+      patched_df_b64=$(echo "${patched_df}" | base64 | tr -d '\n')
+      curl -k -s -X PUT "${GITEA_URL}/api/v1/repos/${GITEA_USER}/${repo_name}/contents/Dockerfile" \
+        -u "${GITEA_USER}:${GITEA_PASS}" \
+        -H "Content-Type: application/json" \
+        -d "{
+          \"message\": \"fix(docker): disable hsperfdata in build stage to eliminate snapshot race condition\",
+          \"content\": \"${patched_df_b64}\",
+          \"sha\": \"${df_sha}\",
+          \"branch\": \"main\"
+        }" > /dev/null 2>&1 || true
+      echo "✓ Dockerfile patched in ${repo_name}."
+    fi
+  fi
+
   # Commit .woodpecker.yaml pipeline if present
   if [[ -f "${pipeline_file}" ]]; then
     local content_b64
