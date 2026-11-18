@@ -14,6 +14,8 @@ clone:
 steps:
   - name: build-flutter-web
     image: k3d-dev-registry:5000/flutter:stable
+    volumes:
+      - woodpecker-flutter-cache:/root/.pub-cache
     commands:
       - echo "==> Configuring Flutter Web..."
       - flutter config --no-analytics

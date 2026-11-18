@@ -110,6 +110,7 @@ deploy-woodpecker:
 
 deploy-woodpecker-rbac:
 	kubectl apply -f manifests/woodpecker/woodpecker-deployer-rbac.yaml
+	kubectl apply -f manifests/woodpecker/woodpecker-cache-pvcs.yaml
 
 setup-gitea-woodpecker:
 	./scripts/setup-gitea-woodpecker.sh
