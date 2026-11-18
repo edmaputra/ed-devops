@@ -2,6 +2,15 @@ when:
   - event: [push, pull_request, manual]
     branch: [main, master]
 
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    settings:
+      remote: http://gitea-http.default.svc.cluster.local:3000/gitea_admin/ilmiya-frontend.git
+      recursive: true
+      submodule-override:
+        .agents: https://github.com/edmaputra/ed-agent-standards.git
+
 steps:
   - name: build-flutter-web
     image: k3d-dev-registry:5000/flutter:stable
@@ -15,7 +24,7 @@ steps:
       - flutter build web --release --no-wasm-dry-run --dart-define=ILMIYA_API_BASE_URL=https://ilmiya.localhost
       - echo "==> Verifying compiled web output..."
       - ls -la build/web/
-      - test -f build/web/index.html || { echo "ERROR: build/web/index.html missing!"; exit 1; }
+      - 'test -f build/web/index.html || { echo "ERROR: build/web/index.html missing!"; exit 1; }'
       - rm -f .dockerignore
       - |
         cat <<'EOF' > Dockerfile.prod

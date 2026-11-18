@@ -2,6 +2,15 @@ when:
   - event: [push, pull_request, manual]
     branch: [main, master]
 
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    settings:
+      remote: http://gitea-http.default.svc.cluster.local:3000/gitea_admin/ilmiya.git
+      recursive: true
+      submodule-override:
+        .agents: https://github.com/edmaputra/ed-agent-standards.git
+
 steps:
   - name: test-and-coverage
     image: k3d-dev-registry:5000/eclipse-temurin:25-jdk

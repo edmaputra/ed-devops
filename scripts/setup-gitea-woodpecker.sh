@@ -122,6 +122,33 @@ seed_repo() {
     echo "Repository ${repo_name} already exists."
   fi
 
+  # Patch .gitmodules if it contains SSH URLs (e.g. git@github.com:) to use HTTPS
+  local gitmodules_check
+  gitmodules_check=$(curl -k -s -u "${GITEA_USER}:${GITEA_PASS}" "${GITEA_URL}/api/v1/repos/${GITEA_USER}/${repo_name}/contents/.gitmodules")
+  local gm_sha
+  gm_sha=$(echo "${gitmodules_check}" | jq -r '.sha // empty')
+  if [[ -n "${gm_sha}" ]]; then
+    local gm_content
+    gm_content=$(echo "${gitmodules_check}" | jq -r '.content // empty' | tr -d '\n' | base64 -d 2>/dev/null || true)
+    if [[ "${gm_content}" == *"git@github.com:"* ]]; then
+      echo "Patching .gitmodules in ${repo_name} to use HTTPS public URLs..."
+      local patched_gm
+      patched_gm=$(echo "${gm_content}" | sed 's|git@github.com:|https://github.com/|g')
+      local patched_gm_b64
+      patched_gm_b64=$(echo "${patched_gm}" | base64 | tr -d '\n')
+      curl -k -s -X PUT "${GITEA_URL}/api/v1/repos/${GITEA_USER}/${repo_name}/contents/.gitmodules" \
+        -u "${GITEA_USER}:${GITEA_PASS}" \
+        -H "Content-Type: application/json" \
+        -d "{
+          \"message\": \"fix(gitmodules): use public HTTPS submodule url\",
+          \"content\": \"${patched_gm_b64}\",
+          \"sha\": \"${gm_sha}\",
+          \"branch\": \"main\"
+        }" > /dev/null 2>&1 || true
+      echo "✓ .gitmodules patched in ${repo_name}."
+    fi
+  fi
+
   # Commit .woodpecker.yaml pipeline if present
   if [[ -f "${pipeline_file}" ]]; then
     local content_b64
