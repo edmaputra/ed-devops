@@ -1,0 +1,96 @@
+when:
+  - event: [push, pull_request, manual]
+    branch: [main, master]
+
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    settings:
+      remote: http://gitea-http.default.svc.cluster.local:3000/gitea_admin/ilmiya-frontend.git
+      recursive: true
+      submodule-override:
+        .agents: https://github.com/edmaputra/ed-agent-standards.git
+
+steps:
+  - name: build-flutter-web
+    image: k3d-dev-registry:5000/flutter:stable
+    volumes:
+      - woodpecker-flutter-cache:/root/.pub-cache
+    commands:
+      - echo "==> Configuring Flutter Web..."
+      - flutter config --no-analytics
+      - flutter config --enable-web
+      - echo "==> Resolving dependencies..."
+      - flutter pub get
+      - echo "==> Compiling Flutter Web release..."
+      - flutter build web --release --no-wasm-dry-run --dart-define=ILMIYA_API_BASE_URL=https://ilmiya.localhost
+      - echo "==> Verifying compiled web output..."
+      - ls -la build/web/
+      - 'test -f build/web/index.html || { echo "ERROR: build/web/index.html missing!"; exit 1; }'
+      - rm -f .dockerignore
+      - |
+        cat <<'EOF' > Dockerfile.prod
+        FROM nginx:alpine
+        RUN rm -rf /usr/share/nginx/html/*
+        COPY nginx.conf /etc/nginx/conf.d/default.conf
+        COPY build/web /usr/share/nginx/html
+        COPY docker-entrypoint.sh /docker-entrypoint.sh
+        RUN chmod +x /docker-entrypoint.sh
+        EXPOSE 80
+        ENTRYPOINT ["/docker-entrypoint.sh"]
+        CMD ["nginx", "-g", "daemon off;"]
+        EOF
+    backend_options:
+      kubernetes:
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2000m
+            memory: 2048Mi
+
+  - name: build-and-push-kaniko
+    image: k3d-dev-registry:5000/kaniko:debug
+    commands:
+      - echo "==> Building and pushing container image via Kaniko..."
+      - |
+        /kaniko/executor \
+          --context=dir://. \
+          --dockerfile=Dockerfile.prod \
+          --destination=k3d-dev-registry:5000/ilmiya-frontend:${CI_PIPELINE_NUMBER:-1} \
+          --destination=k3d-dev-registry:5000/ilmiya-frontend:latest \
+          --cache=true --cache-run-layers=true \
+          --cache-repo=k3d-dev-registry:5000/kaniko-cache --cache-ttl=72h --compressed-caching=false \
+          --snapshot-mode=redo \
+          --image-download-retry=3 \
+          --image-fs-extract-retry=3 \
+          --push-retry=3 \
+          --insecure \
+          --skip-tls-verify
+    backend_options:
+      kubernetes:
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1024Mi
+
+  - name: deploy-rollout
+    image: docker.io/curlimages/curl:8.23.0
+    commands:
+      - echo "==> Triggering rollout restart for ilmiya-frontend in Kubernetes..."
+      - TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)
+      - |
+        if [ -n "$TOKEN" ]; then
+          curl -k -s -X PATCH -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/strategic-merge-patch+json" \
+            https://kubernetes.default.svc/apis/apps/v1/namespaces/default/deployments/ilmiya-frontend \
+            -d "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -Iseconds)\"}}}}}"
+          echo "[OK] Rollout restart triggered on Kubernetes."
+        fi
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-deployer

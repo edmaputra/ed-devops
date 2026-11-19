@@ -66,8 +66,8 @@ This tells macOS to resolve **all `.localhost` subdomains** using localhost's DN
 
 ```bash
 # After cluster-up, all of these should resolve:
-ping -c 1 jenkins.localhost
-ping -c 1 argocd.localhost
+ping -c 1 woodpecker.localhost
+ping -c 1 gitea.localhost
 ping -c 1 vault.localhost
 ```
 
@@ -123,8 +123,7 @@ If you skipped the setup script, add repos manually:
 
 ```bash
 helm repo add hashicorp   https://helm.releases.hashicorp.com
-helm repo add jenkins     https://charts.jenkins.io
-helm repo add argo        https://argoproj.github.io/argo-helm
+helm repo add woodpecker  https://woodpecker-ci.org/
 helm repo add openobserve https://charts.openobserve.ai
 helm repo add fluent      https://fluent.github.io/helm-charts
 helm repo update

@@ -38,8 +38,9 @@ put_kv "config/ilmiya-backend/data" 'logging:
     root: INFO
     io.github.edmaputra.ilmiya: DEBUG
 ilmiya:
-  seed:
-    enabled: true'
+  bootstrap:
+    superadmin:
+      enabled: true'
 
 # 3. Uwati configuration (config/uwati/data)
 put_kv "config/uwati/data" 'logging:

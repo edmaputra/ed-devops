@@ -117,7 +117,7 @@ fi
 # ------------------------------------------------------------------------------
 echo ""
 echo -e "${BOLD}4. Validating Kubernetes Manifests (kubectl client dry-run)...${NC}"
-STANDARD_DIRS=("manifests/ingress" "manifests/jenkins" "manifests/postgres" "manifests/argocd")
+STANDARD_DIRS=("manifests/ingress" "manifests/woodpecker" "manifests/postgres")
 ALL_STD_PASS=true
 for dir in "${STANDARD_DIRS[@]}"; do
   if [[ -d "${dir}" ]]; then

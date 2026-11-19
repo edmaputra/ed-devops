@@ -1,0 +1,24 @@
+when:
+  - event: [cron, manual]
+
+steps:
+  - name: storage-and-image-prune
+    image: docker.io/curlimages/curl:8.23.0
+    commands:
+      - echo "=================================================================="
+      - echo " Starting Autonomous Storage & Image Cleanup"
+      - echo "=================================================================="
+      - |
+        if [ -S /var/run/docker.sock ]; then
+          echo "-> Pruning dangling container images..."
+          curl -s -X POST --unix-socket /var/run/docker.sock "http://localhost/v1.41/images/prune?filters=%7B%22dangling%22%3A%5B%22true%22%5D%7D" || true
+
+          echo "-> Pruning unused volumes..."
+          curl -s -X POST --unix-socket /var/run/docker.sock "http://localhost/v1.41/volumes/prune" || true
+
+          echo "-> Pruning stopped containers..."
+          curl -s -X POST --unix-socket /var/run/docker.sock "http://localhost/v1.41/containers/prune" || true
+        else
+          echo "Notice: Socket /var/run/docker.sock not mounted."
+        fi
+      - echo "[OK] Cleanup process finished."

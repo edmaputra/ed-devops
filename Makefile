@@ -1,4 +1,4 @@
-.PHONY: help status start stop cluster-up cluster-down seed-images preload-images deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-argocd deploy-argocd-image-updater deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-jenkins-rbac seed-jobs deploy-all deploy-apps deploy-argocd-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
+.PHONY: help status start stop cluster-up cluster-down seed-images preload-images deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-gitea deploy-woodpecker deploy-woodpecker-rbac setup-gitea-woodpecker deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-all deploy-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
 
 # ---------------------------------------------------------------------------
 # Detect OS and set the correct k3d config and container socket.
@@ -36,16 +36,15 @@ help:
 	@echo "  make deploy-postgres     - Deploy or upgrade PostgreSQL via Helm"
 	@echo "  make setup-vault-secrets - Configure Vault Kubernetes auth and app database secrets"
 	@echo "  make setup-consul-config - Seed application configuration into HashiCorp Consul KV"
-	@echo "  make deploy-jenkins      - Deploy or upgrade Jenkins CI/CD via Helm"
-	@echo "  make deploy-argocd       - Deploy or upgrade ArgoCD via Helm"
-	@echo "  make deploy-argocd-image-updater - Deploy or upgrade ArgoCD Image Updater via Helm"
+	@echo "  make deploy-gitea        - Deploy or upgrade Gitea Git Forge via Helm"
+	@echo "  make deploy-woodpecker   - Deploy or upgrade Woodpecker CI via Helm"
+	@echo "  make deploy-woodpecker-rbac - Apply RBAC for Woodpecker Kubernetes pipeline agents"
+	@echo "  make setup-gitea-woodpecker - Configure Gitea OAuth, Woodpecker secret, and seed repos"
 	@echo "  make deploy-openobserve  - Deploy or upgrade OpenObserve via Helm"
 	@echo "  make deploy-fluent-bit   - Deploy or upgrade Fluent Bit log shipper via Helm"
 	@echo "  make setup-openobserve-dashboards - Provision initial OpenObserve metrics & log dashboards"
 	@echo "  make deploy-ingress      - Apply local Ingress configuration"
-	@echo "  make deploy-jenkins-rbac - Apply RBAC for Jenkins dynamic build agents"
-	@echo "  make seed-jobs           - Seed centralized local deployment pipeline jobs into Jenkins"
-	@echo "  make cleanup-storage     - Prune older Jenkins builds, dangling/unused images & volumes"
+	@echo "  make cleanup-storage     - Prune dangling/unused images, volumes, and stopped containers"
 	@echo "  make deploy-cleanup-cronjob - Deploy scheduled autonomous storage cleanup CronJob to k8s"
 	@echo "  make deploy-all          - Deploy all platform services, TLS, and ingress"
 	@echo "  make cluster-up          - Create k3d cluster with local registry"
@@ -68,19 +67,19 @@ urls:
 	@echo "=========================================================="
 	@echo " Local Services Dashboard (HTTPS Port 443 & HTTP Port 80) "
 	@echo "=========================================================="
-	@echo " Jenkins    : https://jenkins.localhost   (User: admin, Pass: admin123)"
-	@echo " ArgoCD     : https://argocd.localhost    (User: admin, Pass: admin123)"
-	@echo " OpenObserve: https://openobserve.localhost (User: admin@example.com, Pass: DevOps_OpenObserve#2026)"
-	@echo " Vault      : https://vault.localhost/ui  (Root Token: root)"
-	@echo " Consul     : https://consul.localhost/ui"
-	@echo " PostgreSQL : postgres:5432 / localhost:5432 (Admin: postgres / P0stgr3s_L4b_Adm!n#2026 | ilmiya_db: ilmiya_user / Ilm!y4_Db_P@ss2026#Secure | uwati: uwati / Uwat!_Db_P@ss2026#Secure)"
-	@echo " Registry   : http://localhost:5000/v2/_catalog"
+	@echo " Woodpecker CI : https://woodpecker.localhost"
+	@echo " Gitea Forge   : https://gitea.localhost      (User: gitea_admin, Pass: DevOps_Gitea#2026)"
+	@echo " OpenObserve   : https://openobserve.localhost (User: admin@example.com, Pass: DevOps_OpenObserve#2026)"
+	@echo " Vault         : https://vault.localhost/ui    (Root Token: root)"
+	@echo " Consul        : https://consul.localhost/ui"
+	@echo " PostgreSQL    : postgres:5432 / localhost:5432 (Admin: postgres / P0stgr3s_L4b_Adm!n#2026 | ilmiya_db: ilmiya_user / Ilm!y4_Db_P@ss2026#Secure | uwati: uwati / Uwat!_Db_P@ss2026#Secure)"
+	@echo " Registry      : http://localhost:5000/v2/_catalog"
 	@echo "=========================================================="
 
 generate-certs:
 	mkdir -p certs
 	mkcert -cert-file certs/local-cert.pem -key-file certs/local-key.pem \
-		localhost "*.localhost" vault.localhost consul.localhost jenkins.localhost argocd.localhost ilmiya.localhost "*.ilmiya.localhost" openobserve.localhost
+		localhost "*.localhost" vault.localhost consul.localhost woodpecker.localhost gitea.localhost ilmiya.localhost "*.ilmiya.localhost" openobserve.localhost
 
 create-tls-secret:
 	kubectl create secret tls local-wildcard-tls --cert=certs/local-cert.pem --key=certs/local-key.pem --dry-run=client -o yaml | kubectl apply -f -
@@ -103,14 +102,18 @@ setup-vault-secrets:
 setup-consul-config:
 	./scripts/setup-consul-config.sh
 
-deploy-jenkins:
-	helm upgrade --install jenkins jenkins/jenkins -f helm/jenkins/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
+deploy-gitea:
+	helm upgrade --install gitea helm/gitea --timeout 15m $(HELM_UPGRADE_FLAGS)
 
-deploy-argocd:
-	helm upgrade --install argocd argo/argo-cd -f helm/argocd/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
+deploy-woodpecker:
+	helm upgrade --install woodpecker woodpecker/woodpecker -f helm/woodpecker/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
 
-deploy-argocd-image-updater:
-	helm upgrade --install argocd-image-updater argo/argocd-image-updater -f helm/argocd-image-updater/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
+deploy-woodpecker-rbac:
+	kubectl apply -f manifests/woodpecker/woodpecker-deployer-rbac.yaml
+	kubectl apply -f manifests/woodpecker/woodpecker-cache-pvcs.yaml
+
+setup-gitea-woodpecker:
+	./scripts/setup-gitea-woodpecker.sh
 
 deploy-openobserve:
 	helm upgrade --install openobserve openobserve/openobserve-standalone -f helm/openobserve/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)
@@ -124,21 +127,14 @@ setup-openobserve-dashboards:
 deploy-ingress:
 	kubectl apply -f manifests/ingress/local-ingress.yaml
 
-deploy-jenkins-rbac:
-	kubectl apply -f manifests/jenkins/jenkins-deployer-rbac.yaml
-	kubectl apply -f manifests/jenkins/jenkins-gradle-cache-pvc.yaml
-
-seed-jobs:
-	./scripts/seed-jenkins-jobs.sh
-
 cleanup-storage:
 	./scripts/cleanup-storage.sh
 
 deploy-cleanup-cronjob:
 ifeq ($(OS),Darwin)
-	@sed 's|/run/podman/podman.sock|/var/run/docker.sock|g' manifests/jenkins/jenkins-storage-cleanup-cronjob.yaml | kubectl apply -f -
+	@sed 's|/run/podman/podman.sock|/var/run/docker.sock|g' manifests/woodpecker/woodpecker-storage-cleanup-cronjob.yaml | kubectl apply -f -
 else
-	kubectl apply -f manifests/jenkins/jenkins-storage-cleanup-cronjob.yaml
+	kubectl apply -f manifests/woodpecker/woodpecker-storage-cleanup-cronjob.yaml
 endif
 
 healthcheck:
@@ -150,14 +146,11 @@ lint:
 worktree:
 	./scripts/worktree-helper.sh $(BRANCH) $(TARGET_DIR)
 
-deploy-all: create-tls-secret deploy-ingress deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-jenkins deploy-jenkins-rbac deploy-argocd deploy-argocd-image-updater deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards seed-jobs deploy-cleanup-cronjob
+deploy-all: create-tls-secret deploy-ingress deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-gitea deploy-woodpecker-rbac setup-gitea-woodpecker deploy-woodpecker deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-cleanup-cronjob
+
 deploy-apps:
 	kubectl apply -k manifests/apps/ilmiya-backend
 	kubectl apply -k manifests/apps/ilmiya-frontend
-
-deploy-argocd-apps:
-	kubectl apply -f manifests/argocd/applications.yaml
-	kubectl apply -f manifests/argocd/image-updater.yaml
 
 start:
 	@echo "Starting local registry and k3d cluster..."
@@ -226,10 +219,19 @@ seed-images:
 	docker tag  busybox:1.36 localhost:5000/busybox:latest
 	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/busybox:latest
 
-	@echo "--- ArgoCD Image Updater ---"
-	docker pull quay.io/argoprojlabs/argocd-image-updater:v1.5.0
-	docker tag  quay.io/argoprojlabs/argocd-image-updater:v1.5.0 localhost:5000/argocd-image-updater:latest
-	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/argocd-image-updater:latest
+	@echo "--- Gitea ---"
+	docker pull docker.io/gitea/gitea:latest
+	docker tag  docker.io/gitea/gitea:latest localhost:5000/gitea:latest
+	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/gitea:latest
+
+	@echo "--- Woodpecker CI Server & Agent ---"
+	docker pull docker.io/woodpeckerci/woodpecker-server:v3.2.0
+	docker tag  docker.io/woodpeckerci/woodpecker-server:v3.2.0 localhost:5000/woodpecker-server:latest
+	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/woodpecker-server:latest
+
+	docker pull docker.io/woodpeckerci/woodpecker-agent:v3.2.0
+	docker tag  docker.io/woodpeckerci/woodpecker-agent:v3.2.0 localhost:5000/woodpecker-agent:latest
+	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/woodpecker-agent:latest
 
 	@echo "--- Semgrep ---"
 	docker pull docker.io/semgrep/semgrep:latest
@@ -255,17 +257,14 @@ seed-images:
 preload-images: seed-images
 	@echo "=== Pre-pulling platform images into k3d cluster containerd cache ==="
 	@for img in \
-		docker.io/jenkins/jenkins:2.580.2-jdk25 \
-		docker.io/jenkins/inbound-agent:3391.va_37fa_a_305d6d-1-jdk25 \
+		docker.io/woodpeckerci/woodpecker-server:v3.2.0 \
+		docker.io/woodpeckerci/woodpecker-agent:v3.2.0 \
+		docker.io/gitea/gitea:latest \
 		docker.io/hashicorp/vault:2.0.4 \
 		docker.io/hashicorp/vault-k8s:1.7.6 \
 		docker.io/hashicorp/consul:2.1.0 \
 		docker.io/hashicorp/consul-k8s-control-plane:2.1.0 \
-		quay.io/argoproj/argocd:v3.6.1 \
-		k3d-dev-registry:5000/argocd-image-updater:latest \
 		docker.io/library/postgres:latest \
-		ecr-public.aws.com/docker/library/redis:8.6.4-alpine \
-		docker.io/kiwigrid/k8s-sidecar:2.14.1 \
 		docker.io/curlimages/curl:8.23.0 \
 		k3d-dev-registry:5000/fluent-bit:latest \
 		k3d-dev-registry:5000/openobserve:latest \

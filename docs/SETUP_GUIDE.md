@@ -16,8 +16,8 @@ graph TD
             Reg[Local Container Registry<br/>k3d-dev-registry:5000]
             
             subgraph K3sCluster [k3d Kubernetes Cluster: dev-cluster]
-                Traefik -->|https://jenkins.localhost| Jenkins[Jenkins Controller<br/>Port 8080]
-                Traefik -->|https://argocd.localhost| ArgoCD[ArgoCD Server<br/>Port 80]
+                Traefik -->|https://woodpecker.localhost| Woodpecker[Woodpecker CI<br/>Port 8000]
+                Traefik -->|https://gitea.localhost| Gitea[Gitea Forge<br/>Port 3000]
                 Traefik -->|https://openobserve.localhost| OpenObserve[OpenObserve<br/>Port 5080]
                 Traefik -->|https://vault.localhost| Vault[HashiCorp Vault<br/>Port 8200]
                 Traefik -->|https://consul.localhost| Consul[HashiCorp Consul<br/>Port 80]
@@ -160,8 +160,8 @@ mkcert -cert-file certs/local-cert.pem -key-file certs/local-key.pem \
   "*.localhost" \
   vault.localhost \
   consul.localhost \
-  jenkins.localhost \
-  argocd.localhost \
+  woodpecker.localhost \
+  gitea.localhost \
   ilmiya.localhost \
   "*.ilmiya.localhost" \
   openobserve.localhost
@@ -281,106 +281,31 @@ helm upgrade --install consul hashicorp/consul -f helm/consul/values.yaml
 
 ---
 
-### Step 6.3: Jenkins CI/CD
-Add repository:
-```bash
-helm repo add jenkins https://charts.jenkins.io
-helm repo update
-```
-
-Configuration (`helm/jenkins/values.yaml`):
-```yaml
-controller:
-  admin:
-    username: "admin"
-    password: "admin123"
-  resources:
-    requests:
-      cpu: "200m"
-      memory: "1024Mi"
-    limits:
-      cpu: "2000m"
-      memory: "2048Mi"
-  javaOpts: "-Xmx1536m -Xms512m"
-  initContainerResources:
-    requests:
-      cpu: "200m"
-      memory: "512Mi"
-    limits:
-      cpu: "2000m"
-      memory: "2048Mi"
-  initContainerEnv:
-    - name: JAVA_OPTS
-      value: "-Xmx1024m -Xms256m"
-  installLatestPlugins: false
-persistence:
-  enabled: true
-  size: "5Gi"
-```
+### Step 6.3: Gitea Git Forge
+Gitea provides self-hosted Git repositories, webhooks, and OAuth2 authentication for Woodpecker CI. It is packaged as a local Helm chart in `helm/gitea`.
 
 Deploy:
 ```bash
-helm upgrade --install jenkins jenkins/jenkins -f helm/jenkins/values.yaml
+make deploy-gitea
 ```
 
 ---
 
-### Step 6.4: ArgoCD GitOps Continuous Delivery
+### Step 6.4: Woodpecker CI/CD
 Add repository:
 ```bash
-helm repo add argo https://argoproj.github.io/argo-helm
+helm repo add woodpecker https://woodpecker-ci.org/
 helm repo update
 ```
 
-Configuration (`helm/argocd/values.yaml`):
-```yaml
-global:
-  domain: argocd.localhost
+Configuration (`helm/woodpecker/values.yaml`):
+Woodpecker Server connects to Gitea via OAuth2 and uses the Kubernetes backend to execute pipeline steps dynamically inside isolated Pods.
 
-configs:
-  params:
-    server.insecure: true
-  secret:
-    # Bcrypt hash for "admin123"
-    argocdServerAdminPassword: "$2a$10$oVbzkaBWQJr7QoifYHbm3uckkM9UiZC511Ue8mDOeYhpO0x8/h/T2"
-
-server:
-  resources:
-    requests:
-      cpu: "50m"
-      memory: "128Mi"
-    limits:
-      cpu: "500m"
-      memory: "512Mi"
-
-repoServer:
-  resources:
-    requests:
-      cpu: "50m"
-      memory: "128Mi"
-    limits:
-      cpu: "500m"
-      memory: "512Mi"
-
-controller:
-  resources:
-    requests:
-      cpu: "100m"
-      memory: "256Mi"
-    limits:
-      cpu: "500m"
-      memory: "512Mi"
-
-dex:
-  enabled: false
-
-notifications:
-  enabled: false
-```
-
-Deploy:
+Deploy & configure:
 ```bash
-helm upgrade --install argocd argo/argo-cd -f helm/argocd/values.yaml
+make deploy-woodpecker-rbac
+make setup-gitea-woodpecker
+make deploy-woodpecker
 ```
 
 ---
@@ -450,8 +375,8 @@ spec:
     - hosts:
         - vault.localhost
         - consul.localhost
-        - jenkins.localhost
-        - argocd.localhost
+        - woodpecker.localhost
+        - gitea.localhost
         - openobserve.localhost
       secretName: local-wildcard-tls
   rules:
@@ -475,26 +400,26 @@ spec:
                 name: consul-ui
                 port:
                   number: 80
-    - host: jenkins.localhost
+    - host: woodpecker.localhost
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: jenkins
-                port:
-                  number: 8080
-    - host: argocd.localhost
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: argocd-server
+                name: woodpecker-server
                 port:
                   number: 80
+    - host: gitea.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gitea-http
+                port:
+                  number: 3000
 ```
 Apply:
 ```bash
@@ -503,27 +428,27 @@ kubectl apply -f manifests/ingress/local-ingress.yaml
 
 ---
 
-### Step 6.7: Grant Deployer Permissions to Jenkins Agents
-To allow Jenkins agent pods to create and update application workloads in the `default` namespace:
+### Step 6.7: Grant Deployer Permissions to Woodpecker Agents
+To allow Woodpecker pipeline agent pods to deploy and trigger rollouts on Kubernetes workloads:
 
 ```bash
-kubectl apply -f manifests/jenkins/jenkins-deployer-rbac.yaml
+kubectl apply -f manifests/woodpecker/woodpecker-deployer-rbac.yaml
 ```
 
 ---
 
 ### Step 6.8: Seed Centralized Local Deployment Pipelines
-To maintain total decoupling between application repositories and platform infrastructure, Jenkins uses centralized inline pipelines rather than reading `Jenkinsfile` from app repositories.
+Pipelines are stored under `pipelines/`:
+- `pipelines/ilmiya-backend.woodpecker.yaml` (Java / Kotlin Spring Boot Backend)
+  - Unit and integration tests with JaCoCo code coverage enforcement (`>= 80%`).
+  - Semgrep static security scan with findings published to OpenObserve.
+  - Kaniko rootless image build and push.
+  - Automatic Kubernetes rollout restart.
+- `pipelines/ilmiya-frontend.woodpecker.yaml` (Flutter Web Frontend)
 
-The pipelines are stored under `pipelines/`:
-- `pipelines/local-deploy-backend.groovy` (Java / Kotlin Spring Boot Backend)
-  - **`RUN_TESTS=true` (Default)**: Executes all Gradle unit and integration tests with Testcontainers. Fails if any test fails.
-  - **Code Coverage Enforcement (`>= 80%`)**: Aggregates JaCoCo instruction and line coverage across all subprojects and automatically fails the build if code coverage falls below 80%.
-- `pipelines/local-deploy-frontend.groovy` (Flutter Web Frontend)
-
-Seed or update these jobs in Jenkins at any time:
+Seed these repositories and pipelines in Gitea at any time:
 ```bash
-make seed-jobs
+make setup-gitea-woodpecker
 ```
 
 ---
@@ -621,7 +546,7 @@ When deploying microservices to this lab:
 
 ### 2. `curl: (60) SSL: no alternative certificate subject name matches target hostname`
 - **Cause**: OpenSSL adheres strictly to RFC 6125 §6.4.3, which rejects wildcards matching single-label TLDs (`*.localhost`).
-- **Fix**: Re-issue certificates with explicit Subject Alternative Names (`vault.localhost`, `consul.localhost`, `jenkins.localhost`, `argocd.localhost`).
+- **Fix**: Re-issue certificates with explicit Subject Alternative Names (`vault.localhost`, `consul.localhost`, `woodpecker.localhost`, `gitea.localhost`).
 
 ### 3. Webhook Failures on Pod Creation
 - **Symptom**: `failed calling webhook consul-connect-injector.consul.hashicorp.com: no endpoints available`
@@ -637,8 +562,8 @@ When deploying microservices to this lab:
 
 | Component | Protocol & Port | URL | Credentials |
 | :--- | :--- | :--- | :--- |
-| **Jenkins CI/CD** | HTTPS (443) | `https://jenkins.localhost` | `admin` / `admin123` |
-| **ArgoCD GitOps** | HTTPS (443) | `https://argocd.localhost` | `admin` / `admin123` |
+| **Woodpecker CI** | HTTPS (443) | `https://woodpecker.localhost` | Gitea OAuth2 login |
+| **Gitea Forge** | HTTPS (443) | `https://gitea.localhost` | `gitea_admin` / `DevOps_Gitea#2026` |
 | **OpenObserve** | HTTPS (443) | `https://openobserve.localhost` | `admin@example.com` / `DevOps_OpenObserve#2026` |
 | **PostgreSQL** | TCP (5432) | `postgres:5432` (k8s) / `localhost:5432` (host) | Superuser: `postgres` / `P0stgr3s_L4b_Adm!n#2026`<br>Ilmiya: `ilmiya_db` / `ilmiya_user` / `Ilm!y4_Db_P@ss2026#Secure`<br>Uwati: `uwati` / `uwati` / `Uwat!_Db_P@ss2026#Secure` |
 | **HashiCorp Vault UI** | HTTPS (443) | `https://vault.localhost/ui/` | Token: `root` |
