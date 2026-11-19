@@ -81,10 +81,10 @@ steps:
         resources:
           requests:
             cpu: 1000m
-            memory: 2048Mi
+            memory: 1536Mi
           limits:
             cpu: 4000m
-            memory: 5120Mi
+            memory: 3840Mi
 
   - name: semgrep-scan
     image: k3d-dev-registry:5000/semgrep:latest
@@ -142,7 +142,7 @@ steps:
             memory: 1024Mi
           limits:
             cpu: 2000m
-            memory: 4096Mi
+            memory: 3072Mi
 
   - name: deploy-rollout
     image: docker.io/curlimages/curl:8.23.0

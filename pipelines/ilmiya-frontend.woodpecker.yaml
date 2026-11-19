@@ -45,7 +45,7 @@ steps:
         resources:
           requests:
             cpu: 500m
-            memory: 1024Mi
+            memory: 512Mi
           limits:
             cpu: 2000m
             memory: 2048Mi
@@ -73,10 +73,10 @@ steps:
         resources:
           requests:
             cpu: 200m
-            memory: 512Mi
+            memory: 256Mi
           limits:
-            cpu: 2000m
-            memory: 2048Mi
+            cpu: 1000m
+            memory: 1024Mi
 
   - name: deploy-rollout
     image: docker.io/curlimages/curl:8.23.0
