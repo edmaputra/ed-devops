@@ -12,6 +12,15 @@ clone:
         .agents: https://github.com/edmaputra/ed-agent-standards.git
 
 steps:
+  - name: sync-upstream
+    image: docker.io/alpine/git:latest
+    commands:
+      - echo "==> Syncing latest code from GitHub main..."
+      - git fetch https://github.com/edmaputra/ilmiya.git ${CI_COMMIT_BRANCH:-main}
+      - git reset --hard FETCH_HEAD
+      - git submodule update --init --recursive || true
+      - 'echo "==> Workspace updated to latest commit: $(git log -1 --oneline)"'
+
   - name: test-and-coverage
     image: k3d-dev-registry:5000/eclipse-temurin:25-jdk
     volumes:

@@ -1,4 +1,4 @@
-.PHONY: help status start stop cluster-up cluster-down seed-images preload-images deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-gitea deploy-woodpecker deploy-woodpecker-rbac setup-gitea-woodpecker deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-all deploy-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
+.PHONY: help status start stop cluster-up cluster-down seed-images preload-images deploy-vault deploy-consul deploy-postgres setup-vault-secrets setup-consul-config deploy-gitea deploy-woodpecker deploy-woodpecker-rbac setup-gitea-woodpecker sync-repos deploy-openobserve deploy-fluent-bit setup-openobserve-dashboards deploy-ingress deploy-all deploy-apps urls generate-certs create-tls-secret cleanup-storage deploy-cleanup-cronjob healthcheck lint worktree setup-macos
 
 # ---------------------------------------------------------------------------
 # Detect OS and set the correct k3d config and container socket.
@@ -40,6 +40,7 @@ help:
 	@echo "  make deploy-woodpecker   - Deploy or upgrade Woodpecker CI via Helm"
 	@echo "  make deploy-woodpecker-rbac - Apply RBAC for Woodpecker Kubernetes pipeline agents"
 	@echo "  make setup-gitea-woodpecker - Configure Gitea OAuth, Woodpecker secret, and seed repos"
+	@echo "  make sync-repos [REPO=...] - Sync Gitea repos with GitHub upstream & trigger deployment (all, frontend, backend)"
 	@echo "  make deploy-openobserve  - Deploy or upgrade OpenObserve via Helm"
 	@echo "  make deploy-fluent-bit   - Deploy or upgrade Fluent Bit log shipper via Helm"
 	@echo "  make setup-openobserve-dashboards - Provision initial OpenObserve metrics & log dashboards"
@@ -114,6 +115,9 @@ deploy-woodpecker-rbac:
 
 setup-gitea-woodpecker:
 	./scripts/setup-gitea-woodpecker.sh
+
+sync-repos:
+	./scripts/sync-repos.sh $(REPO)
 
 deploy-openobserve:
 	helm upgrade --install openobserve openobserve/openobserve-standalone -f helm/openobserve/values.yaml --timeout 15m $(HELM_UPGRADE_FLAGS)

@@ -17,6 +17,11 @@ steps:
     volumes:
       - woodpecker-flutter-cache:/root/.pub-cache
     commands:
+      - echo "==> Syncing latest code from GitHub main..."
+      - git fetch https://github.com/edmaputra/ilmiya-frontend.git ${CI_COMMIT_BRANCH:-main}
+      - git reset --hard FETCH_HEAD
+      - git submodule update --init --recursive || true
+      - 'echo "==> Building commit: $(git log -1 --oneline)"'
       - echo "==> Configuring Flutter Web..."
       - flutter config --no-analytics
       - flutter config --enable-web
