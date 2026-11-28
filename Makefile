@@ -256,6 +256,11 @@ seed-images:
 	docker pull ghcr.io/cirruslabs/flutter:stable
 	docker tag  ghcr.io/cirruslabs/flutter:stable localhost:5000/flutter:stable
 	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/flutter:stable
+
+	@echo "--- Bitnami Kubectl ---"
+	docker pull docker.io/bitnami/kubectl:latest
+	docker tag  docker.io/bitnami/kubectl:latest localhost:5000/kubectl:latest
+	docker push $(DOCKER_PUSH_FLAGS) localhost:5000/kubectl:latest
 	@echo "=== Image seeding complete ==="
 
 preload-images: seed-images
@@ -276,7 +281,8 @@ preload-images: seed-images
 		k3d-dev-registry:5000/semgrep:latest \
 		k3d-dev-registry:5000/eclipse-temurin:25-jdk \
 		k3d-dev-registry:5000/kaniko:debug \
-		k3d-dev-registry:5000/flutter:stable; do \
+		k3d-dev-registry:5000/flutter:stable \
+		k3d-dev-registry:5000/kubectl:latest; do \
 		echo "--> Pulling $$img..."; \
 		docker exec k3d-dev-cluster-server-0 crictl pull "$$img" || true; \
 	done

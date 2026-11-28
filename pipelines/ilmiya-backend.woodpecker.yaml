@@ -153,19 +153,24 @@ steps:
             cpu: 2000m
             memory: 3072Mi
 
-  - name: deploy-rollout
-    image: docker.io/curlimages/curl:8.23.0
+  - name: deploy-or-rollout
+    image: k3d-dev-registry:5000/kubectl:latest
     commands:
-      - echo "==> Triggering rollout restart for ilmiya-backend in Kubernetes..."
-      - TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)
+      - echo "==> Checking if ilmiya-backend is deployed in Kubernetes..."
       - |
-        if [ -n "$TOKEN" ]; then
-          curl -k -s -X PATCH -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/strategic-merge-patch+json" \
-            https://kubernetes.default.svc/apis/apps/v1/namespaces/default/deployments/ilmiya-backend \
-            -d "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -Iseconds)\"}}}}}"
-          echo "[OK] Rollout restart triggered on Kubernetes."
+        if ! kubectl get deployment ilmiya-backend >/dev/null 2>&1; then
+          echo "==> Deployment not found. Deploying application manifests from ed-devops..."
+          git clone --depth 1 http://gitea-http.default.svc.cluster.local:3000/gitea_admin/ed-devops.git /tmp/ed-devops 2>/dev/null || \
+          git clone --depth 1 https://github.com/edmaputra/ed-devops.git /tmp/ed-devops
+          kubectl apply -k /tmp/ed-devops/manifests/apps/ilmiya-backend
+          rm -rf /tmp/ed-devops
+          echo "[OK] Application manifests deployed."
+        else
+          echo "==> Deployment found. Triggering rollout restart for ilmiya-backend..."
+          kubectl rollout restart deployment/ilmiya-backend
         fi
+      - kubectl rollout status deployment/ilmiya-backend --timeout=180s
+      - echo "[OK] Deployment rollout succeeded."
     backend_options:
       kubernetes:
         serviceAccountName: woodpecker-deployer
