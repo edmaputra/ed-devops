@@ -215,14 +215,14 @@ seed_repo() {
 
 seed_repo "ilmiya" "https://github.com/edmaputra/ilmiya.git" "${ROOT_DIR}/pipelines/ilmiya-backend.woodpecker.yaml"
 seed_repo "ilmiya-frontend" "https://github.com/edmaputra/ilmiya-frontend.git" "${ROOT_DIR}/pipelines/ilmiya-frontend.woodpecker.yaml"
+seed_repo "ed-devops" "https://github.com/edmaputra/ed-devops.git" ""
 
 # Enable trusted volumes for Woodpecker repositories to support caching volumes
 echo "Configuring trusted volume permissions for Woodpecker pipelines..."
 python3 -c '
-import hmac, hashlib, base64, json, urllib.request, ssl, subprocess
+import sqlite3, subprocess
 
 try:
-    # Query admin user hash from Woodpecker storage
     k3d_node = "k3d-dev-cluster-server-0"
     pvc_dir = subprocess.check_output(
         ["docker", "exec", k3d_node, "sh", "-c", "ls -d /var/lib/rancher/k3s/storage/*data-woodpecker-server-0* 2>/dev/null | head -n 1"]
@@ -230,36 +230,17 @@ try:
 
     if pvc_dir:
         subprocess.check_call(["docker", "cp", f"{k3d_node}:{pvc_dir}/woodpecker.sqlite", "/tmp/woodpecker-setup.sqlite"])
-        user_hash = subprocess.check_output(["sqlite3", "/tmp/woodpecker-setup.sqlite", "SELECT hash FROM users WHERE admin = 1 LIMIT 1;"]).decode("utf-8").strip()
+        conn = sqlite3.connect("/tmp/woodpecker-setup.sqlite")
+        c = conn.cursor()
+        trusted_val = "{\"network\":true,\"volumes\":true,\"security\":false}"
+        c.execute("UPDATE repos SET trusted = ? WHERE name IN (\"ilmiya\", \"ilmiya-frontend\")", (trusted_val,))
+        conn.commit()
+        conn.close()
+        subprocess.check_call(["docker", "cp", "/tmp/woodpecker-setup.sqlite", f"{k3d_node}:{pvc_dir}/woodpecker.sqlite"])
+        subprocess.check_call(["docker", "exec", k3d_node, "chown", "1000:1000", f"{pvc_dir}/woodpecker.sqlite"])
         subprocess.call(["rm", "-f", "/tmp/woodpecker-setup.sqlite"])
-
-        if user_hash:
-            def b64url(data):
-                return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")
-
-            header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}).encode("utf-8"))
-            payload = b64url(json.dumps({"type": "user", "user-id": "1"}).encode("utf-8"))
-            msg = f"{header}.{payload}".encode("utf-8")
-            sig = b64url(hmac.new(user_hash.encode("utf-8"), msg, hashlib.sha256).digest())
-            token = f"{header}.{payload}.{sig}"
-
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-
-            for repo_id in [1, 2]:
-                try:
-                    req = urllib.request.Request(
-                        f"https://woodpecker.localhost/api/repos/{repo_id}",
-                        data=json.dumps({"trusted": {"volumes": True, "network": True}}).encode("utf-8"),
-                        method="PATCH"
-                    )
-                    req.add_header("Authorization", f"Bearer {token}")
-                    req.add_header("Content-Type", "application/json")
-                    urllib.request.urlopen(req, context=ctx)
-                except Exception:
-                    pass
-            print("✓ Trusted volume permissions enabled for repositories.")
+        subprocess.call(["kubectl", "rollout", "restart", "statefulset/woodpecker-server"])
+        print("✓ Trusted volume permissions enabled for repositories.")
 except Exception as e:
     print(f"Notice: Could not automatically patch trusted repos ({e}), ensure Trusted > Volumes is enabled in Woodpecker UI.")
 ' || true

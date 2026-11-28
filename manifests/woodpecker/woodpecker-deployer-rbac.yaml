@@ -14,7 +14,7 @@ rules:
     resources: ["deployments", "deployments/rollback", "deployments/scale"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "services", "configmaps", "secrets"]
+    resources: ["pods", "pods/log", "services", "configmaps", "secrets", "serviceaccounts"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
